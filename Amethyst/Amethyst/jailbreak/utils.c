@@ -1,6 +1,59 @@
 #include "jailbreak.h"
 #include "handoff.h"
+#include "ppl.h"
 #include "utils.h"
+
+soc_type_t get_soc_type(void) {
+    uint32_t cpu_family = 0;
+    size_t cpu_family_size = sizeof(cpu_family);
+    sysctlbyname("hw.cpufamily", &cpu_family, &cpu_family_size, NULL, 0);
+
+    char board[64] = {0};
+    size_t board_size = sizeof(board);
+    sysctlbyname("hw.targettype", &board[0], &board_size, NULL, 0);
+    
+    switch (cpu_family) {
+        case CPUFAMILY_ARM_CYCLONE: {
+            return SOC_A7;
+        } break;
+            
+        case CPUFAMILY_ARM_TYPHOON: {
+            if (strcasecmp(board, "J81AP") == 0 || strcasecmp(board, "J82AP") == 0) return SOC_A8X;
+            return SOC_A8;
+        } break;
+            
+        case CPUFAMILY_ARM_TWISTER: {
+            if (strcasecmp(board, "J98aAP") == 0 || strcasecmp(board, "J99aAP") == 0 ||
+                strcasecmp(board, "J127AP") == 0 || strcasecmp(board, "J128AP") == 0) return SOC_A9X;
+            return SOC_A9;
+        } break;
+            
+        case CPUFAMILY_ARM_HURRICANE: {
+            if (strcasecmp(board, "J207AP") == 0 || strcasecmp(board, "J208AP") == 0 ||
+                strcasecmp(board, "J120AP") == 0 || strcasecmp(board, "J121AP") == 0) return SOC_A10X;
+            return SOC_A10;
+        } break;
+        
+        case CPUFAMILY_ARM_MONSOON_MISTRAL: {
+            return SOC_A11;
+        } break;
+            
+        case CPUFAMILY_ARM_VORTEX_TEMPEST: {
+            if (strcasecmp(board, "J317AP") == 0 || strcasecmp(board, "J317xAP") == 0 ||
+                strcasecmp(board, "J318AP") == 0 || strcasecmp(board, "J318xAP") == 0 ||
+                strcasecmp(board, "J320AP") == 0 || strcasecmp(board, "J320xAP") == 0 ||
+                strcasecmp(board, "J321AP") == 0 || strcasecmp(board, "J321xAP") == 0) return SOC_A12X;
+            if (strcasecmp(board, "J417AP") == 0 || strcasecmp(board, "J418AP") == 0 ||
+                strcasecmp(board, "J420AP") == 0 || strcasecmp(board, "J421AP") == 0) return SOC_A12Z;
+            return SOC_A12;
+        } break;
+            
+        case CPUFAMILY_ARM_LIGHTNING_THUNDER: {
+            return SOC_A13;
+        } break;
+        default: return SOC_UNKNOWN;
+    }
+}
 
 uint64_t find_proc_for_pid(pid_t pid) {
     if (pid < 0) return 0;
@@ -591,7 +644,7 @@ int run_binary(char *path, char **args, char **env, bool wait, bool root) {
     posix_spawnattr_init(&attr);
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_START_SUSPENDED);
 
-    int err = posix_spawn(&pid, args[0], NULL, NULL, args, env);
+    int err = posix_spawn(&pid, args[0], &file_actions, &attr, args, env);
     posix_spawnattr_destroy(&attr);
     close(fds[1]);
 
@@ -601,21 +654,30 @@ int run_binary(char *path, char **args, char **env, bool wait, bool root) {
         return -1;
     }
     
-    uint64_t proc = find_proc_for_pid(pid);
-    uint64_t ucred = kread64(proc + koffsetof(proc, ucred));
+    if (kinfo != NULL && MACH_PORT_VALID(kinfo->tfp0)) {
+        uint64_t proc = find_proc_for_pid(pid);
+        uint64_t ucred = kread64(proc + koffsetof(proc, ucred));
 
-    kwrite32(proc + koffsetof(proc, p_svuid), 0);
-    kwrite32(ucred + koffsetof(ucred, cr_svuid), 0);
-    kwrite32(ucred + koffsetof(ucred, cr_uid), 0);
-    kwrite32(proc + koffsetof(proc, p_svgid), 0);
-    kwrite32(ucred + koffsetof(ucred, cr_svgid), 0);
-    kwrite32(ucred + koffsetof(ucred, cr_groups), 0);
-    
-    remove_proc_flag(pid, P_SUGID);
-    set_mac_slot(pid, 1, 0);
-    add_task_flag(pid, TF_PLATFORM);
-    add_cs_flag(pid, CS_PLATFORM_PATH|CS_DEBUGGED|CS_INVALID_ALLOWED);
-    remove_cs_flag(pid, CS_KILL|CS_HARD|CS_RESTRICT);
+        kwrite32(proc + koffsetof(proc, p_svuid), 0);
+        kwrite32(ucred + koffsetof(ucred, cr_svuid), 0);
+        kwrite32(ucred + koffsetof(ucred, cr_uid), 0);
+        kwrite32(proc + koffsetof(proc, p_svgid), 0);
+        kwrite32(ucred + koffsetof(ucred, cr_svgid), 0);
+        kwrite32(ucred + koffsetof(ucred, cr_groups), 0);
+        
+        remove_proc_flag(pid, P_SUGID);
+        set_mac_slot(pid, 1, 0);
+        add_task_flag(pid, TF_PLATFORM);
+        add_cs_flag(pid, CS_PLATFORM_PATH|CS_DEBUGGED|CS_INVALID_ALLOWED);
+        remove_cs_flag(pid, CS_KILL|CS_HARD|CS_RESTRICT);
+        
+        if (kinfo->protections.ppl) {
+            uint64_t task = find_task_for_pid(pid);
+            uint64_t vm_map = kread64(task + koffsetof(task, vm_map));
+            uint64_t task_pmap = kread64(vm_map + koffsetof(vm_map, pmap));
+            ppl_write8(kvtophys(task_pmap + koffsetof(pmap, cs_enforced)), 0);
+        }
+    }
     kill(pid, SIGCONT);
     
     if (wait) {

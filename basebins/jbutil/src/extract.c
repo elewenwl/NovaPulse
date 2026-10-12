@@ -128,7 +128,6 @@ int extract_tar(FILE *input, const char *path) {
     size_t bytes_read = 0;
     int file_size = 0;
     char path_name[100] = {0};
-    time_t mtime = 0;
     mode_t mode = 0;
 
     while (true) {
@@ -153,7 +152,6 @@ int extract_tar(FILE *input, const char *path) {
             case TAR_FIFOTYPE: break;
             default:
                 printf("%s\n", (char *)data);
-                mtime = parse_time(data + TAR_MTIME_OFF);
                 mode = parse_mode(data + TAR_OCTAL_OFF);
                 for (int i = 0; i < 100; i++) path_name[i] = data[0 + i];
                 file = create_file(data, mode, TAR_UID, TAR_GID);

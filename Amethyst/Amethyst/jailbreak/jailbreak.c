@@ -5,7 +5,6 @@
 #include "patchfinder.h"
 #include "remount.h"
 #include "handoff.h"
-#include "dyld.h"
 #include "macho.h"
 #include "trustcache.h"
 #include "install.h"
@@ -14,6 +13,7 @@
 #include "nvram.h"
 
 kinfo_t *kinfo = NULL;
+static uint64_t orig_sb = 0;
 
 static int init_device(void) {
     if (kinfo != NULL) return 0;
@@ -27,47 +27,48 @@ static int init_device(void) {
     
     sscanf(str, "%d.%d.%d", &kinfo->version[0], &kinfo->version[1], &kinfo->version[2]);
     CFRelease(dict);
-    
-    uint32_t cpu_family = 0;
-    size_t size = sizeof(cpu_family);
-    sysctlbyname("hw.cpufamily", &cpu_family, &size, NULL, 0);
-    
-    switch (cpu_family) {
-        case CPUFAMILY_ARM_CYCLONE: // A7
-            kinfo->page_size = 0x1000;
+
+    switch (get_soc_type()) {
+        case SOC_A7:
+        case SOC_A8:
+            kinfo->pmap_page_size = 0x1000;
+            kinfo->vm_page_size = 0x1000;
             kinfo->protections.kpp = true;
             kinfo->tnsv2_supported = (kinfo->version[0] == 12);
             break;
-        case CPUFAMILY_ARM_TYPHOON: // A8
-            kinfo->page_size = 0x1000;
+        case SOC_A8X:
+            kinfo->pmap_page_size = 0x1000;
+            kinfo->vm_page_size = 0x4000;
             kinfo->protections.kpp = true;
             kinfo->tnsv2_supported = (kinfo->version[0] == 12);
             break;
-        case CPUFAMILY_ARM_TWISTER: // A9
-            kinfo->page_size = 0x4000;
+        case SOC_A9:
+        case SOC_A9X:
+            kinfo->pmap_page_size = 0x4000;
+            kinfo->vm_page_size = 0x4000;
             kinfo->protections.kpp = true;
             kinfo->tnsv2_supported = (kinfo->version[0] == 12);
             break;
-        case CPUFAMILY_ARM_HURRICANE: // A10
-            kinfo->page_size = 0x4000;
+        case SOC_A10:
+        case SOC_A10X:
+            kinfo->pmap_page_size = 0x4000;
+            kinfo->vm_page_size = 0x4000;
             kinfo->protections.ktrr = true;
             kinfo->protections.pan = true;
             kinfo->tnsv2_supported = (kinfo->version[0] == 12);
             break;
-        case CPUFAMILY_ARM_MONSOON_MISTRAL: // A11
-            kinfo->page_size = 0x4000;
+        case SOC_A11:
+            kinfo->pmap_page_size = 0x4000;
+            kinfo->vm_page_size = 0x4000;
             kinfo->protections.ktrr = true;
             kinfo->protections.pan = true;
             break;
-        case CPUFAMILY_ARM_VORTEX_TEMPEST: // A12
-            kinfo->page_size = 0x4000;
-            kinfo->protections.ktrr = true;
-            kinfo->protections.pan = true;
-            kinfo->protections.pac = true;
-            kinfo->protections.ppl = true;
-            break;
-        case CPUFAMILY_ARM_LIGHTNING_THUNDER: // A13
-            kinfo->page_size = 0x4000;
+        case SOC_A12:
+        case SOC_A12X:
+        case SOC_A12Z:
+        case SOC_A13:
+            kinfo->pmap_page_size = 0x4000;
+            kinfo->vm_page_size = 0x4000;
             kinfo->protections.ktrr = true;
             kinfo->protections.pan = true;
             kinfo->protections.pac = true;
@@ -147,6 +148,7 @@ static int init_device(void) {
 static int init_permissions(void) {
     uint64_t self_ucred = kread64(kinfo->self_proc_addr + koffsetof(proc, ucred));
     if (self_ucred == 0) return -1;
+    orig_sb = get_mac_slot(getpid(), 1);
     
     kwrite32(kinfo->self_proc_addr + koffsetof(proc, p_svuid), 0);
     kwrite32(self_ucred + koffsetof(ucred, cr_svuid), 0);
@@ -188,6 +190,22 @@ static void reset_permissions(void) {
     remove_proc_flag(getpid(), P_SUGID);
 }
 
+void run_as_mobile(void (^action)(void)) {
+    bool set_back = false;
+    if (kinfo != NULL && MACH_PORT_VALID(kinfo->tfp0) && (getuid() == 0 || getgid() == 0)) {
+        set_back = true;
+        reset_permissions();
+        set_mac_slot(getpid(), 1, orig_sb);
+        usleep(80);
+    }
+        
+    action();
+    if (set_back) {
+        init_permissions();
+        usleep(80);
+    }
+}
+
 static int run_exploit(uint32_t flags) {
     if (MACH_PORT_VALID(kinfo->tfp0)) return 0;
     if (flags & JB_FLAG_EXPLOIT_TRIGON) {
@@ -203,7 +221,6 @@ static int run_exploit(uint32_t flags) {
             kinfo->ipc_space_kernel = trigon->ipc_space_kernel;
             kinfo->kernel_base = trigon->kernel_base;
             kinfo->kernel_slide = trigon->kernel_slide;
-            kinfo->page_size = trigon->page_size;
             kinfo->tfp0 = trigon->tfp0;
             return 0;
         } else if (err == 0x1337) {
@@ -226,7 +243,6 @@ static int run_exploit(uint32_t flags) {
         kinfo->ipc_space_kernel = hemlock->ipc_space_kernel;
         kinfo->kernel_base = hemlock->kernel_base;
         kinfo->kernel_slide = hemlock->kernel_slide;
-        kinfo->page_size = hemlock->page_size;
         kinfo->tfp0 = hemlock->tfp0;
         return 0;
     }
@@ -235,10 +251,7 @@ static int run_exploit(uint32_t flags) {
 
 static int run_kpf(void) {
     if (kpf_init() != 0) return -1;
-    uint64_t pe_state = kpf_find_pe_state();
-    if (pe_state == 0) goto err;
-    
-    uint64_t bootargs = kread64(pe_state + 0xa0);
+    uint64_t bootargs = kpf_find_bootargs();
     if (bootargs == 0) goto err;
     
     if (((kinfo->patches.gVirtBase = kread64(bootargs + 0x8)) & 0xffff000000000000) != 0xffff000000000000) goto err;
@@ -248,6 +261,8 @@ static int run_kpf(void) {
     if ((kinfo->patches.dynamic_trustcache = kpf_find_dynamic_trustcache()) == 0) goto err;
     kinfo->patches.static_trustcache = kpf_find_static_trustcache();
     if ((kinfo->patches.ptov_table = kpf_find_ptov_table()) == 0) goto err;
+    if ((kinfo->patches.pidhash_ptr = kpf_find_pidhash_ptr()) == 0) goto err;
+    if ((kinfo->patches.pidhashtbl_ptr = kpf_find_pidhashtbl_ptr()) == 0) goto err;
 
     uint64_t self_vm_map = kread64(kinfo->self_task_addr + koffsetof(task, vm_map));
     if (self_vm_map == 0) goto err;
@@ -269,14 +284,14 @@ static int run_kpf(void) {
         uint64_t pv_head_table_ptr = kpf_find_pv_head_table_ptr();
 
         if (cpu_ttep_ptr != 0 && all_proc != 0 && mapping_base != 0 && kernel_phys_base != 0 && pv_head_table_ptr != 0) {
-            if (kinfo->page_size == 0x1000) {
+            if (kinfo->pmap_page_size == 0x1000) {
                 trigon_cache_set_u64("kernel_phys_base", kernel_phys_base);
             }
             
             trigon_cache_set_u64("mapping_base", mapping_base);
             trigon_cache_set_u64("all_proc", all_proc - kinfo->kernel_slide);
             trigon_cache_set_u64("cpu_ttep_ptr", cpu_ttep_ptr - kinfo->kernel_slide);
-            trigon_cache_set_u64("pe_state", pe_state - kinfo->kernel_slide);
+            trigon_cache_set_u64("bootargs", bootargs - kinfo->kernel_slide);
             trigon_cache_set_u64("pv_head_table_ptr", pv_head_table_ptr - kinfo->kernel_slide);
             trigon_cache_set_u64("ptov_table", kinfo->patches.ptov_table - kinfo->kernel_slide);
             trigon_cache_set_bool("trigon_init", true);
@@ -365,18 +380,38 @@ jb_error_t run_jailbreak(uint32_t flags, char *generator) {
         reset_permissions();
         return JB_ERROR_HANDOFF;
     }
-    
+
     if (flags & JB_FLAG_ENABLE_TWEAKS) {
-        unlink("/amethyst/.disable_tweaks");
+        remove_at_path("/amethyst/.disable_tweaks");
     } else {
         FILE *file = fopen("/amethyst/.disable_tweaks", "w+");
         fflush(file);
         fclose(file);
     }
     
-    if (patch_dyld() != 0) {
-        reset_permissions();
-        return JB_ERROR_DYLD;
+    char test_path[PATH_MAX] = {0};
+    realpath("/usr/lib/dyld", test_path);
+    if (strcmp(test_path, "/usr/lib/dyld_patch") != 0) {
+        if (run_jbutil("--patch-dyld", NULL, true) != 0) {
+            reset_permissions();
+            return JB_ERROR_DYLD;
+        }
+
+        trustcache_add_binary("/usr/lib/dyld_patch");
+        swap_namecache_vnode("/usr/lib/dyld_patch", "/usr/lib/dyld");
+        chmod("/usr/lib/dyld_patch", 0755);
+        chown("/usr/lib/dyld_patch", 0, 0);
+    }
+
+    FILE *file = fopen("/amethyst/.version", "w+");
+    if (file != NULL) {
+        char *version = get_app_version();
+        if (version != NULL) {
+            fprintf(file, "%s", version);
+            free(version);
+        }
+        fflush(file);
+        fclose(file);
     }
     
     if (is_bootstrap_installed()) {
@@ -429,7 +464,7 @@ jb_error_t run_jailbreak(uint32_t flags, char *generator) {
     if (kinfo->tnsv2_supported) {
         install_tnsv2_support();
     }
-    
+
     verify_install();
     ProgressLog(1.0f, "Done");
     FadeDisplay();

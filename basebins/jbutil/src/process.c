@@ -1,3 +1,4 @@
+#include "dyld.h"
 #include "process.h"
 
 uint64_t process_alloc(process_ctx_t *ctx, uint32_t size) {

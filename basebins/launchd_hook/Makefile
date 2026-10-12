@@ -11,8 +11,7 @@ LDFLAGS := -L$(SDK)/usr/lib -lc -lSystem -dynamiclib -framework CoreFoundation -
 	-Wl,-sectcreate,__DATA,__splashscreen,../resources/splashscreen.jp2
 
 SRC = $(wildcard src/*.c) $(wildcard src/*.m) ../common/src/basebin_hook.c ../common/src/basebin_instructions.c \
-	../common/src/basebin_macho.c ../common/src/basebin_memory.c ../common/src/basebin_memory.s \
-	../common/src/basebin_ptrauth.s ../common/src/basebin_util.c
+	../common/src/basebin_macho.c ../common/src/basebin_memory.s ../common/src/basebin_ptrauth.s ../common/src/basebin_util.c
 
 all: $(SRC)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o launchd_hook.dylib $^

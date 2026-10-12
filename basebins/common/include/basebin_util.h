@@ -49,19 +49,13 @@ xpc_object_t xpc_load_entitlements(pid_t pid);
 uint64_t dict_get_u64(xpc_object_t plist, const char *key);
 int dict_get_bool(xpc_object_t dict, const char *key);
 xpc_object_t dict_get_array(xpc_object_t dict, const char *key);
-
-char *resolve_working_dir(void);
-char *resolve_home_dir(void);
+int sys_ptrace(int request, pid_t pid, uint64_t addr, int data);
+int sys_csops(pid_t pid, unsigned int ops, void *useraddr, size_t usersize);
+int sys_csops_audittoken(pid_t pid, unsigned int ops, void *useraddr, size_t usersize, audit_token_t *token);
+int sys_execve(char *path, char **argv, char **env);
 char *resolve_file_at_path(char *path, const char *file);
-char *resolve_path(char *path);
-char *resolve_library(const char *library);
 char *resolve_executable(const char *executable);
 const char *resolve_binary_name(const char *path);
 int resolve_interpreter(const char *path, char **output_path, char ***output_argv, uint32_t *output_argc);
-char *resolve_app_path(char *path);
-uint32_t get_ios_version(void);
-uint32_t get_page_size(void);
-bool soc_is_arm64e(void);
-bool use_stock_libswift(void);
 
 #endif /* basebins_util_h */

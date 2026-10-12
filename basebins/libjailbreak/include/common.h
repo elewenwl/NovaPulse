@@ -8,6 +8,7 @@
 #include <sys/sysctl.h>
 #include <xpc/xpc.h>
 #include <signal.h>
+#include <pthread.h>
 
 #define FLAG_WAIT_EXEC   (1 << 5)
 #define FLAG_DELAY       (1 << 4)
@@ -20,14 +21,10 @@ typedef enum {
     JBSERVER_CMD_UNKNOWN = 0,
     JBSERVER_CMD_TRUSTCACHE,
     JBSERVER_CMD_SIGN_BINARY,
-    JBSERVER_CMD_PRELOAD_BINARY,
     JBSERVER_CMD_INIT_PROCESS,
     JBSERVER_CMD_PLATFORMIZE,
     JBSERVER_CMD_UNSANDBOX,
-    JBSERVER_CMD_PATCH_SETUID,
-    JBSERVER_CMD_PATCH_SETGID,
-    JBSERVER_CMD_CHECK_FAKESIGNED,
-    JBSERVER_CMD_ADD_FAKESIGNED,
+    JBSERVER_CMD_SET_UID_GID,
     JBSERVER_CMD_HEARTBEAT
 } jbserver_cmd_t;
 
@@ -43,12 +40,6 @@ typedef enum {
     JBSERVER_ERR_SERVER_FAILURE,
     JBSERVER_ERR_UNKNOWN_FAILURE
 } jbserver_err_t;
-
-typedef enum {
-    JBSERVER_UNSANDBOX_FULL = 0,
-    JBSERVER_UNSANDBOX_EXTENSIONS,
-    JBSERVER_UNSANDBOX_NONE
-} jbserver_unsandbox_t;
 
 struct _os_alloc_once_s {
     long once;
@@ -75,5 +66,6 @@ extern struct _os_alloc_once_s _os_alloc_once_table[];
 extern void* _os_alloc_once(struct _os_alloc_once_s *slot, size_t sz, os_function_t init);
 extern int xpc_pipe_routine_reply(xpc_object_t reply);
 extern xpc_pipe_t xpc_pipe_create_from_port(mach_port_t port, uint32_t flags);
+extern mach_port_t mach_reply_port(void);
 
 #endif /* libjailbreak_common_h */

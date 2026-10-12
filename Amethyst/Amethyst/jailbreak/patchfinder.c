@@ -154,8 +154,8 @@ int kpf_init(void) {
         ctx->section.ppl_text.size = ctx->section.text.size;
     }
     
-    min_va = (min_va + (kinfo->page_size-1)) & ~((uint64_t)kinfo->page_size-1);
-    max_va = (max_va + (kinfo->page_size-1)) & ~((uint64_t)kinfo->page_size-1) - kinfo->page_size;
+    min_va = (min_va + (kinfo->vm_page_size-1)) & ~((uint64_t)kinfo->vm_page_size-1);
+    max_va = (max_va + (kinfo->vm_page_size-1)) & ~((uint64_t)kinfo->vm_page_size-1) - kinfo->vm_page_size;
     ctx->search_base = min_va;
     ctx->search_size = (uint32_t)(max_va - min_va);
 
@@ -173,9 +173,9 @@ int kpf_init(void) {
     if (ppl_data_start == 0) {
         kread_buf(ctx->search_base, ctx->data, ctx->search_size);
     } else {
-        for (uint64_t offset = 0; offset < ctx->search_size; offset+=kinfo->page_size) {
+        for (uint64_t offset = 0; offset < ctx->search_size; offset+=kinfo->vm_page_size) {
             uint64_t min_addr = ctx->search_base + offset;
-            uint64_t max_addr = ctx->search_base + offset + kinfo->page_size;
+            uint64_t max_addr = ctx->search_base + offset + kinfo->vm_page_size;
             
             if (((min_addr < ppl_data_end) && (max_addr > ppl_data_start)) ||
                 ((min_addr < boot_data_end) && (max_addr > boot_data_start)) ||
@@ -183,7 +183,7 @@ int kpf_init(void) {
                 ((min_addr < linkedit_end) && (max_addr > linkedit_start)) ||
                 ((min_addr < kld_end) && (max_addr > kld_start))) {
             } else {
-                kread_buf(ctx->search_base + offset, ctx->data + offset, kinfo->page_size);
+                kread_buf(ctx->search_base + offset, ctx->data + offset, kinfo->vm_page_size);
             }
         }
     }
@@ -228,45 +228,49 @@ static uint64_t kpf_find_ref(uint64_t to, kernel_section_t *section) {
     
     end_addr &= ~0x3;
     to -= ctx->search_base;
-    uint64_t current_addr = start_addr & ~0x3;
     uint64_t ref_addr = 0;
-    uint64_t state[32] = {0};
     
-    for (; current_addr < end_addr; current_addr += 0x4) {
-        uint32_t current_inst = *(uint32_t *)(ctx->data + current_addr);
-        uint32_t current_reg = current_inst & 0x1f;
+    for (uint32_t i = 0; i < 2; i++) {
+        uint64_t current_addr = start_addr & ~0x3;
+        uint64_t state[32] = {0};
+        ref_addr = 0;
         
-        if ((current_inst & A64_ADRP_MASK) == A64_ADRP_OPCODE) {
-            int32_t adr = ((current_inst & 0x60000000) >> 18) | ((current_inst & 0xFFFFE0) << 8);
-            state[current_reg] = ((int64_t)adr << 1) + (current_addr & ~0xFFF);
-            continue;
-        } else if ((current_inst & A64_ADD_MASK) == A64_ADD_OPCODE) {
-            uint32_t rn = (current_inst >> 5) & 0x1F;
-            uint32_t shift = (current_inst >> 22) & 3;
-            uint32_t imm = (current_inst >> 10) & 0xFFF;
+        for (; current_addr < end_addr; current_addr += 0x4) {
+            uint32_t current_inst = *(uint32_t *)(ctx->data + current_addr);
+            uint32_t current_reg = current_inst & 0x1f;
             
-            if (shift == 1) imm <<= 12;
-            else if (shift > 1) continue;
-            state[current_reg] = state[rn] + imm;
-        } else if ((current_inst & 0xF9C00000) == 0xF9400000) {
-            uint32_t rn = (current_inst >> 5) & 0x1F;
-            uint32_t imm = ((current_inst >> 10) & 0xFFF) << 3;
-            if (!imm) continue;
-            state[current_reg] = state[rn] + imm;
-        } else if ((current_inst & A64_ADR_MASK) == A64_ADR_OPCODE) {
-            int32_t adr = ((current_inst & 0x60000000) >> 18) | ((current_inst & 0xFFFFE0) << 8);
-            state[current_reg] = ((int64_t)adr >> 11) + current_addr;
-        } else if ((current_inst & A64_LDR_X_LITERAL_MASK) == A64_LDR_X_LITERAL_OPCODE) {
-            uint32_t adr = (current_inst & 0xFFFFE0) >> 3;
-            state[current_reg] = adr + current_addr;
-        }
-        
-        if (state[current_reg] == to) {
-            ref_addr = current_addr;
-            break;
+            if ((current_inst & A64_ADRP_MASK) == A64_ADRP_OPCODE) {
+                int32_t adr = ((current_inst & 0x60000000) >> 18) | ((current_inst & 0xFFFFE0) << 8);
+                state[current_reg] = ((int64_t)adr << 1) + (current_addr & ~0xFFF);
+                continue;
+            } else if ((current_inst & A64_ADD_MASK) == A64_ADD_OPCODE) {
+                uint32_t rn = (current_inst >> 5) & 0x1F;
+                uint32_t shift = (current_inst >> 22) & 3;
+                uint32_t imm = (current_inst >> 10) & 0xFFF;
+                
+                if (shift == 1) imm <<= 12;
+                else if (shift > 1) continue;
+                state[current_reg] = state[rn] + imm;
+            } else if (i != 0 && ((current_inst & 0xF9C00000) == 0xF9400000)) {
+              //  uint32_t rn = (current_inst >> 5) & 0x1F;
+              //  uint32_t imm = ((current_inst >> 10) & 0xFFF) << 3;
+              //  if (!imm) continue;
+              //  state[current_reg] = state[rn] + imm;
+            } else if ((current_inst & A64_ADR_MASK) == A64_ADR_OPCODE) {
+                int32_t adr = ((current_inst & 0x60000000) >> 18) | ((current_inst & 0xFFFFE0) << 8);
+                state[current_reg] = ((int64_t)adr >> 11) + current_addr;
+            } else if (i != 0 && ((current_inst & A64_LDR_X_LITERAL_MASK) == A64_LDR_X_LITERAL_OPCODE)) {
+             //   uint32_t adr = (current_inst & 0xFFFFE0) >> 3;
+             //   state[current_reg] = adr + current_addr;
+            }
+            
+            if (state[current_reg] == to) {
+                ref_addr = current_addr;
+                break;
+            }
         }
     }
-    
+
     if (ref_addr == 0) return 0;
     return ref_addr + ctx->search_base;
 }
@@ -347,7 +351,7 @@ static uint64_t kpf_find_strref(const char *str, kernel_section_t *string_sectio
     } else {
         str_addr = kpf_find_str(str, string_section);
     }
-
+    
     if (str_addr == 0) return 0;
     if (text_section == NULL) {
         if (ctx->section.text.size >= 0) text_addr = kpf_find_ref(str_addr, &ctx->section.text);
@@ -629,6 +633,93 @@ fallback:
     return kpf_register_value(adrp, 0x8, 8);
 }
 
+uint64_t kpf_find_pidhash_ptr(void) {
+    uint64_t ref = kpf_find_strref("sigrestrict", NULL, NULL);
+    if (ref == 0) {
+        if (kinfo->version[0] >= 13) {
+            ref = kpf_find_strref("-no_vnode_drain", NULL, NULL);
+        } else {
+            ref = kpf_find_strref("\"startup: kauth_cred_init\"", NULL, NULL);
+        }
+    }
+    if (ref == 0) return 0;
+
+    uint64_t mov = 0;
+    if (kinfo->version[0] >= 13) {
+        uint64_t first_mov = kpf_find_next(ref, 0x100, 0x52800082, A64_ALL_MASK); // mov, w2, #0x4
+        if (first_mov == 0) first_mov = kpf_find_next(ref, 0x100, 0x52800003, A64_ALL_MASK); // mov, w3, #0
+        if (first_mov == 0) return 0;
+        
+        uint64_t branch = kpf_find_next_branch(first_mov, 0x40, true);
+        for (uint32_t i = 0; i < 4; i++) {
+            uint64_t func = kpf_decode_branch(branch);
+            if (func == 0) continue;
+            
+            mov = kpf_find_next(func, 0x100, 0x52800521, A64_ALL_MASK); // mov, w1, #0x29
+            if (mov != 0) break;
+            
+            branch = kpf_find_next_branch(branch+0x4, 0x20, true);
+            if (branch == 0) break;
+        }
+    } else {
+        mov = kpf_find_next(ref, 0x400, 0x52800521, A64_ALL_MASK); // mov, w1, #0x29
+    }
+    if (mov == 0) return 0;
+
+    uint64_t cmp = kpf_find_prev(mov, 0x30, 0x7100011f, A64_ALL_MASK); // cmp, w8, #0
+    if (cmp == 0) cmp = kpf_find_prev(mov, 0x30, 0x7100013f, A64_ALL_MASK); // cmp, w9, #0
+    if (cmp == 0) return 0;
+    
+    uint64_t adrp = kpf_find_next(cmp, 0x80, A64_ADRP_OPCODE, A64_ADRP_MASK);
+    if (adrp == 0) return 0;
+    return kpf_register_value(adrp, 0x8, 2);
+}
+
+uint64_t kpf_find_pidhashtbl_ptr(void) {
+    uint64_t ref = kpf_find_strref("sigrestrict", NULL, NULL);
+    if (ref == 0) {
+        if (kinfo->version[0] >= 13) {
+            ref = kpf_find_strref("-no_vnode_drain", NULL, NULL);
+        } else {
+            ref = kpf_find_strref("\"startup: kauth_cred_init\"", NULL, NULL);
+        }
+    }
+    if (ref == 0) return 0;
+
+    uint64_t mov = 0;
+    if (kinfo->version[0] >= 13) {
+        uint64_t first_mov = kpf_find_next(ref, 0x100, 0x52800082, A64_ALL_MASK); // mov, w2, #0x4
+        if (first_mov == 0) first_mov = kpf_find_next(ref, 0x100, 0x52800003, A64_ALL_MASK); // mov, w3, #0
+        if (first_mov == 0) return 0;
+        
+        uint64_t branch = kpf_find_next_branch(first_mov, 0x40, true);
+        for (uint32_t i = 0; i < 4; i++) {
+            uint64_t func = kpf_decode_branch(branch);
+            if (func == 0) continue;
+            
+            mov = kpf_find_next(func, 0x100, 0x52800521, A64_ALL_MASK); // mov, w1, #0x29
+            if (mov != 0) break;
+            
+            branch = kpf_find_next_branch(branch+0x4, 0x20, true);
+            if (branch == 0) break;
+        }
+    } else {
+        mov = kpf_find_next(ref, 0x400, 0x52800521, A64_ALL_MASK); // mov, w1, #0x29
+    }
+    if (mov == 0) return 0;
+
+    uint64_t cmp = kpf_find_prev(mov, 0x30, 0x7100011f, A64_ALL_MASK); // cmp, w8, #0
+    if (cmp == 0) cmp = kpf_find_prev(mov, 0x30, 0x7100013f, A64_ALL_MASK); // cmp, w9, #0
+    if (cmp == 0) return 0;
+    
+    uint64_t adrp = kpf_find_next(cmp, 0x80, A64_ADRP_OPCODE, A64_ADRP_MASK);
+    if (adrp == 0) return 0;
+    
+    adrp = kpf_find_next(adrp+0x8, 0x40, A64_ADRP_OPCODE, A64_ADRP_MASK);
+    if (adrp == 0) return 0;
+    return kpf_decode_adrp_ldr_str(adrp, 3);
+}
+
 uint64_t kpf_find_all_proc(void) {
     if (kinfo->kern_proc_addr == 0) return 0;
     uint64_t current_proc = kinfo->kern_proc_addr;
@@ -743,6 +834,26 @@ fallback:
     return kpf_register_value(adrp, 0x8, 8);
 }
 
+uint64_t kpf_find_bootargs(void) {
+    if (kinfo->version[0] == 13) {
+        uint64_t ref = kpf_find_strref("Boot args: %s\n", NULL, NULL);
+        if (ref == 0) goto fallback;
+
+        uint64_t adrp = kpf_find_prev(ref-0x8, 0x40, A64_ADRP_OPCODE, A64_ADRP_MASK);
+        if (adrp == 0) goto fallback;
+        
+        uint64_t ptr = kpf_decode_adrp_ldr_str(adrp, 3);
+        if (ptr == 0) goto fallback;
+        return kread64(ptr);
+    }
+
+    
+fallback:;
+    uint64_t pe_state = kpf_find_pe_state();
+    if (pe_state == 0) return 0;
+    return kread64(pe_state + 0xa0);
+}
+
 uint64_t kpf_find_gfx_mapping_base(void) {
     CFMutableDictionaryRef dict = CFDictionaryCreateMutable(NULL, 0, NULL, NULL);
     uint64_t oob_size = 0x4000 - 0x8000;
@@ -779,14 +890,14 @@ uint64_t kpf_find_gfx_mapping_base(void) {
     uint64_t mapped = 0;
     uint64_t mapping_base = 0;
 
-    mach_vm_map(mach_task_self(), &mapped, kinfo->page_size, 0, 1, oob_entry, 0, 0, prot, prot, 0);
+    mach_vm_map(mach_task_self(), &mapped, kinfo->vm_page_size, 0, 1, oob_entry, 0, 0, prot, prot, 0);
     if (mapped != 0) {
         *(uint64_t *)mapped = 0x4242424242424242;
         asm volatile ("dsb sy");
         usleep(1000);
         
         mapping_base = vtophys(mapped);
-        mach_vm_deallocate(mach_task_self(), mapped, kinfo->page_size);
+        mach_vm_deallocate(mach_task_self(), mapped, kinfo->vm_page_size);
     }
 
     mach_port_deallocate(mach_task_self(), oob_entry);

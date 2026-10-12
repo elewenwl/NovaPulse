@@ -81,6 +81,8 @@ int kpf_init(void);
 uint64_t kpf_find_dynamic_trustcache(void);
 uint64_t kpf_find_static_trustcache(void);
 uint64_t kpf_find_ptov_table(void);
+uint64_t kpf_find_pidhash_ptr(void);
+uint64_t kpf_find_pidhashtbl_ptr(void);
 uint64_t kpf_find_all_proc(void);
 uint64_t kpf_find_cpu_ttep_ptr(void);
 uint64_t kpf_find_cpu_ttep(void);
@@ -88,6 +90,7 @@ uint64_t kpf_find_self_ttep(void);
 uint64_t kpf_find_pv_head_table_ptr(void);
 uint64_t kpf_find_pv_head_table(void);
 uint64_t kpf_find_pe_state(void);
+uint64_t kpf_find_bootargs(void);
 uint64_t kpf_find_gfx_mapping_base(void);
 
 #endif /* patchfinder_h */

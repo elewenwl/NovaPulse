@@ -80,9 +80,8 @@ uint64_t kalloc_wired(uint32_t size);
 void kfree(uint64_t addr, uint32_t size);
 void kzero(uint64_t addr, uint32_t size);
 uint64_t phystokv(uint64_t pa);
+uint64_t get_va_pte(uint64_t va);
 uint64_t kvtophys(uint64_t va);
 uint64_t vtophys(uint64_t va);
-uint64_t phys_map_page(uint64_t pa);
-void phys_unmap_page(uint64_t va);
 
 #endif /* launchd_hook_memory_h */

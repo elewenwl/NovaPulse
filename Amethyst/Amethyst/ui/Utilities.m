@@ -34,7 +34,6 @@
     textField.smartDashesType = UITextSmartDashesTypeNo;
     textField.smartInsertDeleteType = UITextSmartInsertDeleteTypeNo;
     textField.spellCheckingType = UITextSpellCheckingTypeNo;
-    textField.spellCheckingType = UITextSpellCheckingTypeNo;
     return textField;
 }
 @end
@@ -764,6 +763,114 @@
         if (self.alertOverlay != NULL) self.alertOverlay.alpha = 0.0f;
     }];
     self.selectionDone = YES;
+}
+
+- (BOOL)isOpen {
+    return (self.alertView.alpha != 0.0);
+}
+@end
+
+
+@implementation LoadingAlert: NSObject
+- (id)init:(NSString *)title {
+    self = [super init];
+    self.alertView = [[UIView alloc] init];
+    self.alertView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.alertView.transform = CGAffineTransformScale(CGAffineTransformMakeTranslation(0, 0), 2.0, 2.0);
+    self.alertView.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.1].CGColor;
+    self.alertView.layer.cornerRadius = 20;
+    self.alertView.layer.masksToBounds = YES;
+    self.alertView.layer.borderWidth = 1.0;
+    self.alertView.alpha = 0.0;
+    
+    self.lightBlur = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleLight]];
+    self.darkBlur = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]];
+    
+    self.lightBlur.userInteractionEnabled = NO;
+    self.lightBlur.frame = self.alertView.bounds;
+    self.lightBlur.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.darkBlur.userInteractionEnabled = NO;
+    self.darkBlur.frame = self.alertView.bounds;
+    self.darkBlur.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    
+    if (amethyst.lightMode) {
+        self.lightBlur.alpha = 1.0f;
+        self.darkBlur.alpha = 0.0f;
+    } else {
+        self.lightBlur.alpha = 0.1f;
+        self.darkBlur.alpha = 0.9f;
+    }
+
+    [self.alertView addSubview:self.lightBlur];
+    [self.alertView addSubview:self.darkBlur];
+    [self.alertView setUserInteractionEnabled:YES];
+
+    self.alertTitle = [UILabel createLabel:title size:20 bold:YES align:NSTextAlignmentCenter];
+    self.separator = [UIView createSeprator:YES];
+    [self.alertView addSubview:self.alertTitle];
+    [self.alertView addSubview:self.separator];
+    
+    self.indicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];
+    self.indicator.translatesAutoresizingMaskIntoConstraints = NO;
+    self.indicator.hidesWhenStopped = true;
+    self.indicator.color = [UIColor whiteColor];
+    [self.alertView addSubview:self.indicator];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.alertTitle.centerXAnchor constraintEqualToAnchor:self.alertView.centerXAnchor],
+        [self.alertTitle.topAnchor constraintEqualToAnchor:self.alertView.topAnchor constant:20],
+        [self.separator.topAnchor constraintEqualToAnchor:self.alertTitle.bottomAnchor constant:10],
+        [self.separator.leadingAnchor constraintEqualToAnchor:self.alertView.leadingAnchor constant:20],
+        [self.separator.trailingAnchor constraintEqualToAnchor:self.alertView.trailingAnchor constant:-20],
+        [self.separator.heightAnchor constraintEqualToConstant:1],
+        [self.indicator.topAnchor constraintEqualToAnchor:self.separator.bottomAnchor constant:15],
+        [self.indicator.bottomAnchor constraintEqualToAnchor:self.alertView.bottomAnchor constant:-20],
+        [self.indicator.leadingAnchor constraintEqualToAnchor:self.alertView.leadingAnchor constant:20],
+        [self.indicator.trailingAnchor constraintEqualToAnchor:self.alertView.trailingAnchor constant:-20],
+        [self.indicator.heightAnchor constraintEqualToConstant:40],
+    ]];
+    return self;
+}
+
+- (void)toggleLightMode {
+    if (amethyst.lightMode) {
+        [UIView animateWithDuration:0.3 animations:^{
+            self.lightBlur.alpha = 1.0f;
+            self.darkBlur.alpha = 0.0f;
+        }];
+    } else {
+        [UIView animateWithDuration:0.3 animations:^{
+            self.lightBlur.alpha = 0.1f;
+            self.darkBlur.alpha = 0.9f;
+        }];
+    }
+}
+
+- (void)setOverlay:(UIView *)view {
+    self.alertOverlay = view;
+    self.alertOverlay.alpha = 0.0f;
+}
+
+- (void)openAlert {
+    [UIView animateWithDuration:0.3 animations:^{
+        self.alertView.alpha = 0.98;
+        self.alertView.transform = CGAffineTransformScale(CGAffineTransformMakeTranslation(0, 0), 1.0, 1.0);
+        if (self.alertOverlay != NULL) self.alertOverlay.alpha = 0.50f;
+    }];
+    
+    [self.indicator startAnimating];
+    self.loadingDone = NO;
+}
+
+- (void)closeAlert {
+    [UIView animateWithDuration:0.3 animations:^{
+        self.alertView.alpha = 0.0;
+        self.alertView.transform = CGAffineTransformScale(CGAffineTransformMakeTranslation(0, 0), 1.4, 1.4);
+        if (self.alertOverlay != NULL) self.alertOverlay.alpha = 0.0f;
+    } completion:^(BOOL finished){
+        [self.indicator stopAnimating];
+    }];
+    self.loadingDone = YES;
 }
 
 - (BOOL)isOpen {

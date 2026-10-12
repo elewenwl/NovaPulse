@@ -8,7 +8,6 @@
 
 #define ARM_PAGE_OF(addr)           ((uintptr_t)addr & ARM_PAGE_MASK)
 #define ARM_PAGE_OFFSET(addr)       ((uint32_t)((uintptr_t)addr & ~ARM_PAGE_MASK))
-#define THUMB_ALIGN(addr)           ((void *)(((uint32_t)addr) & ~0x1))
 #define SIZE_ALIGN(size)            (((uint32_t)(size) + (4 - 1)) & ~(4 - 1))
 #define VM_PAGE_OF(addr)            ((uintptr_t)addr & ~((uintptr_t)(vm_page_size - 1)))
 

@@ -186,14 +186,14 @@ int dma_init(void) {
     
     mach_vm_address_t cache_addr = 0;
     uint32_t flags = VM_FLAGS_ANYWHERE | VM_FLAGS_NO_CACHE;
-    mach_vm_allocate(mach_task_self(), &cache_addr, kinfo->page_size, flags);
+    mach_vm_allocate(mach_task_self(), &cache_addr, kinfo->pmap_page_size, flags);
     
     if (cache_addr == 0) return -1;
     
-    mach_vm_wire(kinfo->host_priv, mach_task_self(), cache_addr, kinfo->page_size, VM_PROT_DEFAULT);
+    mach_vm_wire(kinfo->host_priv, mach_task_self(), cache_addr, kinfo->pmap_page_size, VM_PROT_DEFAULT);
     dma_info->cacheline_data_va = cache_addr;
     
-    bzero((void *)cache_addr, kinfo->page_size);
+    bzero((void *)cache_addr, kinfo->pmap_page_size);
     usleep(10000);
     usleep(10000);
     

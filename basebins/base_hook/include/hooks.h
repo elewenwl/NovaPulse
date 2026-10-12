@@ -17,6 +17,6 @@ typedef struct {
 extern int csops(pid_t pid, unsigned int ops, void *useraddr, size_t usersize);
 extern int csops_audittoken(pid_t pid, unsigned int ops, void *useraddr, size_t usersize, audit_token_t *token);
 
-int init_hooks(char *exec_path);
+int init_hooks(void);
 
 #endif /* base_hook_hooks_h */

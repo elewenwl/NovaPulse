@@ -30,7 +30,6 @@ int install_tnsv2_support(void) {
             }
         }
         
-        printf("should_install: %d\n", should_install);
         if (should_install) {
             char *path = (char *)bundle_path("tnsv2_updater_stub.deb");
             if (path != NULL) install_deb(path);

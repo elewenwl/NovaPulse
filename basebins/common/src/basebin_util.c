@@ -2,10 +2,7 @@
 #include "basebin_memory.h"
 #include "basebin_util.h"
 
-static uint32_t ios_version = -1;
-static uint32_t is_arm64e = -1;
-static uint32_t stock_libswift = -1;
-static uint32_t runtime_page_size = -1;
+basebin_info_t basebin_info = {0};
 
 char **env_copy(char **env, uint32_t addtional) {
     uint32_t count = addtional + 1;
@@ -174,18 +171,6 @@ xpc_object_t dict_get_array(xpc_object_t dict, const char *key) {
     return value;
 }
 
-char *resolve_working_dir(void) {
-    char path[PATH_MAX] = {0};
-    if (getcwd(path, PATH_MAX-1) == NULL || path[0] == '\0') return NULL;
-    return strdup(path);
-}
-
-char *resolve_home_dir(void) {
-    struct passwd *pw = getpwuid(getuid());
-    if (pw == NULL || pw->pw_dir == NULL) return NULL;
-    return strdup(pw->pw_dir);
-}
-
 char *resolve_file_at_path(char *path, const char *file) {
     if (path == NULL || file == NULL || path[0] == '\0' || file[0] == '\0') return NULL;
     size_t path_len = strnlen(path, PATH_MAX);
@@ -206,47 +191,6 @@ char *resolve_file_at_path(char *path, const char *file) {
             stat(resolved, &st);
             if (S_ISREG(st.st_mode)) return strdup(resolved);
         }
-    }
-    return NULL;
-}
-
-char *resolve_path(char *path) {
-    if (path == NULL || path[0] == '\0') return NULL;
-    char path_buf[PATH_MAX] = {0};
-
-    char *resolved = realpath(path, path_buf);
-    if (resolved != NULL) return strdup(resolved);
-    return NULL;
-}
-
-char *resolve_library(const char *library) {
-    if (library == NULL || library[0] == '\0') return NULL;
-    char path_buf[PATH_MAX] = {0};
-
-    char *resolved = realpath(library, path_buf);
-    if (resolved != NULL) return strdup(resolved);
-    char *search_paths[] = {
-        "/usr/lib",
-        "/usr/local/lib",
-        "/Library/Frameworks",
-        "/System/Library/Frameworks",
-        "/System/Library/PrivateFrameworks",
-        "/Library",
-        "/System/Library",
-        "/lib",
-        NULL
-    };
-
-    for (uint32_t i = 0; search_paths[i] != NULL; i++) {
-        if (access(search_paths[i], F_OK) == 0) {
-            char *resolved = resolve_file_at_path(search_paths[i], library);
-            if (resolved != NULL) return resolved;
-        }
-    }
-
-    if (!use_stock_libswift() && access("/usr/lib/libswift/stable", F_OK) == 0) {
-        char *resolved = resolve_file_at_path("/usr/lib/libswift/stable", library);
-        if (resolved != NULL) return resolved;
     }
     return NULL;
 }
@@ -525,110 +469,111 @@ int resolve_interpreter(const char *path, char **output_path, char ***output_arg
     return 0;
 }
 
-char *resolve_app_path(char *path) {
-    if (path == NULL || strstr(path, ".app/") == NULL) return NULL;
-    char *copy = strdup(path);
-    if (copy == NULL) return NULL;
-
-    char *app_end = strstr(copy, ".app/");
-    if (app_end == NULL) {
-        free(copy);
-        return NULL;
-    }
+int basebin_init(char **apple) {
+    if (basebin_info.init_done) return 0;
+    mem_task_self = mach_task_self();
     
-    app_end += strlen(".app");
-    app_end[0] = '\0';
+    bzero(&basebin_info, sizeof(basebin_info_t));
+    basebin_info.init_done = true;
+    basebin_info.exec_path = ".unknown";
+    basebin_info.proc_name = ".unknown";
 
-    char *resolved = resolve_path(copy);
-    free(copy);
-    return resolved;
-}
+    task_dyld_info_data_t info = {0};
+    uint32_t count = TASK_DYLD_INFO_COUNT;
 
-uint32_t get_ios_version(void) {
-    if (ios_version != -1) return ios_version;
-    char version_str[64] = {0};
-    size_t version_size = sizeof(version_str)-1;
-    
-    sysctlbyname("kern.osproductversion", version_str, &version_size, 0, 0);
-    if (version_str[0] != '\0') {
-        uint32_t version[3] = {0};
-        sscanf(version_str, "%u.%u.%u", &version[0], &version[1], &version[2]);
+    task_info(mach_task_self(), TASK_DYLD_INFO, (task_info_t)&info, &count);
+    dyld_all_image_infos_t *all_image_infos = (dyld_all_image_infos_t *)info.all_image_info_addr;
+    if (all_image_infos == NULL || all_image_infos->dyldImageLoadAddress == NULL) return -1;
+    basebin_info.dsc_slide = (uint64_t)all_image_infos->sharedCacheSlide;
 
-        if (version[0] != 0) {
-            ios_version = version[0];
-            return ios_version;
+    uint64_t dyld_base = (uint64_t)all_image_infos->dyldImageLoadAddress;
+    if (getpid() != 1 && ((*(uint32_t *)(dyld_base + 0x1000)) & 0x14000000) == 0x14000000) {
+        basebin_info.dyld_handoff = (dyld_patch_handoff_t *)(dyld_base + *(uint32_t *)(dyld_base + 0x1004));
+        if (basebin_info.dyld_handoff->errno_symbol != 0) {
+            uint64_t base = (dyld_base + *(uint32_t *)(dyld_base + 0x1004)) + offsetof(dyld_patch_handoff_t, errno_symbol);
+            uint32_t status = *(uint32_t *)(base + basebin_info.dyld_handoff->errno_symbol + 0x4);
+            if (status == 0xffffffff) return -1;
+        }
+
+        if (basebin_info.dyld_handoff->sb_ext_offset != 0) {
+            uint64_t base = (dyld_base + *(uint32_t *)(dyld_base + 0x1004)) + offsetof(dyld_patch_handoff_t, sb_ext_offset);
+            basebin_info.sb_ext_list = (char *)(base - basebin_info.dyld_handoff->sb_ext_offset);
+        }
+        
+        basebin_info.ios_version[0] = basebin_info.dyld_handoff->ios_version[0];
+        basebin_info.ios_version[1] = basebin_info.dyld_handoff->ios_version[1];
+        basebin_info.ios_version[2] = basebin_info.dyld_handoff->ios_version[2];
+        basebin_info.arm64e_host = (basebin_info.dyld_handoff->arm64e_host == 1);
+        basebin_info.page_size = basebin_info.dyld_handoff->page_size;
+
+        if (basebin_info.dyld_handoff->use_dyld3_symbol != 0) {
+            uint32_t value = *(uint32_t *)(basebin_info.dyld_handoff->use_dyld3_symbol + basebin_info.dsc_slide);
+            basebin_info.dyld3_mode = (value != 0);
         }
     }
 
-    bzero(version_str, sizeof(version_str));
-    version_size = sizeof(version_str)-1;
-    sysctlbyname("kern.osrelease", version_str, &version_size, 0, 0);
-    if (version_str[0] != '\0') {
-        uint32_t version[3] = {0};
-        sscanf(version_str, "%u.%u.%u", &version[0], &version[1], &version[2]);
-
-        switch (version[0]) {
-            case 19: ios_version = 13; break;
-            case 18: ios_version = 12; break;
-            default: ios_version = 0; break;
-        }
-        return ios_version;
-    }
-
-    ios_version = 0;
-    return 0;
-}
-
-uint32_t get_page_size(void) {
-    if (runtime_page_size == -1) {
-        uint32_t cpu_family = 0;
-        size_t size = sizeof(cpu_family);
-        sysctlbyname("hw.cpufamily", &cpu_family, &size, NULL, 0);
-    
-        switch (cpu_family) {
-            case CPUFAMILY_ARM_CYCLONE:
-            case CPUFAMILY_ARM_TYPHOON:
-                runtime_page_size = 0x1000;
-                break;
-            default:
-                runtime_page_size = 0x4000;
-                break;
-        }
-    }
-    return runtime_page_size;
-}
-
-bool soc_is_arm64e(void) {
-    if (is_arm64e == -1) {
-        uint32_t cpu_family = 0;
-        size_t size = sizeof(cpu_family);
-        sysctlbyname("hw.cpufamily", &cpu_family, &size, NULL, 0);
-    
-        if (cpu_family == CPUFAMILY_ARM_VORTEX_TEMPEST || cpu_family == CPUFAMILY_ARM_LIGHTNING_THUNDER) {
-            is_arm64e = 1;
-        } else {
-            is_arm64e = 0;
-        }
-    }
-    return (is_arm64e == 1);
-}
-
-bool use_stock_libswift(void) {
-    if (stock_libswift == -1) {
+    if (basebin_info.ios_version[0] == 0 || basebin_info.page_size == 0) {
         char version_str[64] = {0};
         size_t version_size = sizeof(version_str)-1;
-        uint32_t version[3] = {0};
-
+        
         sysctlbyname("kern.osproductversion", version_str, &version_size, 0, 0);
         if (version_str[0] != '\0') {
-            sscanf(version_str, "%u.%u.%u", &version[0], &version[1], &version[2]);
+            uint32_t version[3] = {0};
+            sscanf(version_str, "%u.%u.%u", &basebin_info.ios_version[0], &basebin_info.ios_version[1], &basebin_info.ios_version[2]);
+        } else {
+            version_size = sizeof(version_str)-1;
+            sysctlbyname("kern.osrelease", version_str, &version_size, 0, 0);
+            if (version_str[0] != '\0') {
+                uint32_t version[3] = {0};
+                sscanf(version_str, "%u.%u.%u", &version[0], &version[1], &version[2]);
+
+                switch (version[0]) {
+                    case 19: basebin_info.ios_version[0] = 13; break;
+                    case 18: basebin_info.ios_version[0] = 12; break;
+                    case 17: basebin_info.ios_version[0] = 11; break;
+                    case 16: basebin_info.ios_version[0] = 10; break;
+                    default: break;
+                }
+            }
         }
 
-        if (version[0] < 12 || (version[0] == 12 && version[1] < 2)) {
-            stock_libswift = 0;
-        } else {
-            stock_libswift = 1;
+        uint32_t cpu_family = 0;
+        size_t size = sizeof(cpu_family);
+        sysctlbyname("hw.cpufamily", &cpu_family, &size, NULL, 0);
+
+        switch (cpu_family) {
+            case CPUFAMILY_ARM_VORTEX_TEMPEST:
+            case CPUFAMILY_ARM_LIGHTNING_THUNDER:
+                basebin_info.arm64e_host = true;
+                basebin_info.page_size = 0x4000;
+                break;
+            case CPUFAMILY_ARM_CYCLONE:
+                basebin_info.page_size = 0x1000;
+                break;
+            case CPUFAMILY_ARM_TYPHOON: {
+                uint64_t value = 0;
+                size_t size = sizeof(value);
+                sysctlbyname("hw.l2cachesize", &value, &size, NULL, 0);
+                basebin_info.page_size = (value > 0x100000) ? 0x4000 : 0x1000;
+            } break;                
+            default:
+                basebin_info.page_size = 0x4000;
+                break;
         }
     }
-    return (stock_libswift == 1);
+
+    if (basebin_info.ios_version[0] > 12 || (basebin_info.ios_version[0] == 12 && basebin_info.ios_version[1] >= 2)) {
+        basebin_info.stock_libswift = true;
+    }
+    
+    if (apple != NULL && apple[0] != NULL) {
+        basebin_info.exec_path = apple[0] + strlen("executable_path=");
+    }
+
+    char **proc_name_ptr = _NSGetProgname();
+    if (proc_name_ptr != NULL && *proc_name_ptr != NULL) {
+        basebin_info.proc_name = *proc_name_ptr;
+        basebin_info.is_xpcproxy = (strcmp(basebin_info.proc_name, "xpcproxy") == 0);
+    }
+    return 0;
 }

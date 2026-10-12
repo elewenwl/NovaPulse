@@ -246,10 +246,6 @@ uint32_t a64_gen_b_cond(int32_t imm, uint8_t cond) {
     return (((int64_t)imm / 4) << 5) | 0x54000000 | (cond & 0xf);
 }
 
-uint32_t a64_gen_bc_cond(int32_t imm, uint8_t cond) {
-    return ((imm / 4) << 5) | 0x54000010 | (cond & 0xf);
-}
-
 uint32_t a64_gen_movk(uint8_t rd, int32_t imm, uint8_t sh) {
     return rd | 0xF2800000 | (0x20 * imm) | ((int)sh >> 4 << 0x15);
 }
@@ -276,8 +272,4 @@ uint32_t a64_gen_cbz(uint8_t sf, uint8_t rt, int32_t imm) {
 
 uint32_t a64_gen_cbnz(uint8_t sf, uint8_t rt, int32_t imm) {
     return 0x35000000 | ((sf & 0x1) << 31) | (((uint32_t)imm >> 2) << 5) | rt;
-}
-
-uint32_t a64_gen_brk(int32_t imm) {
-    return (imm << 5) | 0xd4200000;
 }

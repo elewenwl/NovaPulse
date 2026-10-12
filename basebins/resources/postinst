@@ -18,6 +18,17 @@ mv /amethyst/update/launchd_hook.dylib /amethyst/launchd_hook.dylib | true
 chmod 0755 /amethyst/launchd_hook.dylib | true
 chown 0:0 /amethyst/launchd_hook.dylib | true
 
+rm -rf /amethyst/dyld_patch_text_12.bin | true
+rm -rf /amethyst/dyld_patch_text_13.bin | true
+mv /amethyst/update/dyld_patch_text_12.bin /amethyst/dyld_patch_text_12.bin | true
+mv /amethyst/update/dyld_patch_text_13.bin /amethyst/dyld_patch_text_13.bin | true
+
+rm -rf /amethyst/jbutil | true
+mv /amethyst/update/jbutil /amethyst/jbutil | true
+chmod 0755 /amethyst/jbutil | true
+chown 0:0 /amethyst/jbutil | true
+
 DYLD_INSERT_LIBRARIES=/amethyst/launchd_hook.dylib /amethyst/jbutil -h 2> /dev/null | true
 sync
-exit_script usreboot
+reboot
+exit_script return

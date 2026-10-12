@@ -19,7 +19,6 @@ static const char *xpc_block_list[] = {
     "com.apple.syslogd",
     "com.apple.logd",
     "com.apple.aslmanager",
-    "com.apple.MobileInternetSharing", 
     "com.apple.mobile.keybagd",
     "com.apple.notifyd",
     "com.apple.ReportMemoryException",

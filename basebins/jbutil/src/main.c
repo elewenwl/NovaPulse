@@ -4,13 +4,15 @@
 #include "install.h"
 #include "ptrauth.h"
 #include "util.h"
+#include "dyld.h"
 #include "tnsv2.h"
 
 void print_usage(void) {
-    fprintf(stderr, "usage: jbutil -[i:kUb:d:cu:r:h]\n");
+    fprintf(stderr, "usage: jbutil -[i:kURb:d:cu:r:ph]\n");
     fprintf(stderr, "   -i, --inject-dylib <pid> <dylib-path>\n");
     fprintf(stderr, "   -k, --kickstart\n");
     fprintf(stderr, "   -U, --userspace-reboot\n");
+    fprintf(stderr, "   -R, --respring\n");
     fprintf(stderr, "   -b, --install-bootstrap <tar-path>\n");
     fprintf(stderr, "   -d, --install-deb <deb-path>\n");
     fprintf(stderr, "   -c, --refresh-icon-cache\n");
@@ -48,11 +50,13 @@ int main(int argc, char **argv) {
         {"inject-dylib", required_argument, 0, 'i'},
         {"kickstart", no_argument, 0, 'k'},
         {"userspace-reboot", no_argument, 0, 'U'},
+        {"respring", no_argument, 0, 'R'},
         {"install-bootstrap", required_argument, 0, 'b'},
         {"install-deb", required_argument, 0, 'd'},
         {"refresh-icon-cache", no_argument, 0, 'c'},
         {"unregister-app", required_argument, 0, 'u'},
         {"register-app", required_argument, 0, 'r'},
+        {"patch-dyld", no_argument, 0, 'p'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -62,7 +66,7 @@ int main(int argc, char **argv) {
         return EINVAL;
     }
 
-    while ((opt = getopt_long(argc, argv, "i:kUb:d:cu:r:h", long_opts, &idx)) != -1) {
+    while ((opt = getopt_long(argc, argv, "i:kURb:d:cu:r:ph", long_opts, &idx)) != -1) {
         switch (opt) {
             case 'i': {
                 char *pid_str = optarg;
@@ -86,6 +90,10 @@ int main(int argc, char **argv) {
 
             case 'U': {
                 return userspace_reboot();
+            } break;
+
+            case 'R': {
+                return respring_device();
             } break;
 
             case 'b': {
@@ -126,6 +134,10 @@ int main(int argc, char **argv) {
                     return EINVAL;
                 }
                 return register_app(app_path);
+            } break;
+
+            case 'p': {
+                return patch_dyld();
             } break;
 
             default: {

@@ -4,8 +4,8 @@
 #include "dma.h"
 #include "ppl.h"
 
-#define PPL_PAGE_OF(x)          ((x) & ~(kinfo->page_size-1ULL))
-#define PPL_PAGE_OFFSET(x)      ((x) & (kinfo->page_size-1ULL))
+#define PPL_PAGE_OF(x)          ((x) & ~(kinfo->pmap_page_size-1ULL))
+#define PPL_PAGE_OFFSET(x)      ((x) & (kinfo->pmap_page_size-1ULL))
 
 static void ppl_sync(void) {
     usleep(80);

@@ -4,6 +4,7 @@
 
 static uint64_t phys_mapping_base = 0;
 static mach_port_t phys_mapping_entry = MACH_PORT_NULL;
+static uint8_t *scratch_data = NULL;
 
 static tt_level_t arm_16k_tt_level[4] = {
     (tt_level_t){
@@ -161,7 +162,6 @@ uint64_t kalloc_wired(uint32_t size) {
     if (addr == 0) return 0;
     
     if (mach_vm_wire(kinfo->host_priv, kinfo->tfp0, addr, size, VM_PROT_READ|VM_PROT_WRITE) != 0) {
-        printf("[-] wire failed for 0x%llx with size: 0x%x\n", addr, size);
         kzero(addr, size);
     }
     return addr;
@@ -174,6 +174,17 @@ void kfree(uint64_t addr, uint32_t size) {
 
 void kzero(uint64_t addr, uint32_t size) {
     if (addr == 0 || size == 0) return;
+    if (size <= 256) {
+        if (scratch_data == NULL) {
+            scratch_data = calloc(1, 256);
+            if (scratch_data == NULL) return;
+            bzero(scratch_data, size);
+        }
+
+        kwrite_buf(addr, scratch_data, size);
+        return;
+    }
+    
     void *data = calloc(1, size);
     if (data == NULL) return;
     
@@ -201,7 +212,7 @@ uint64_t phystokv(uint64_t pa) {
 
 static uint64_t ttep_vtophys(uint64_t ttep, uint64_t va) {
     if (arm_tt_level == NULL) {
-        if (kinfo->page_size == 0x1000) {
+        if (kinfo->pmap_page_size == 0x1000) {
             arm_tt_level = &arm_4k_tt_level[0];
         } else {
             arm_tt_level = &arm_16k_tt_level[0];
@@ -297,7 +308,7 @@ static int init_phys_mapping(void) {
     prot = VM_PROT_READ | VM_PROT_WRITE;
     uint64_t mapped = 0;
     
-    if (mach_vm_map(mach_task_self(), &mapped, kinfo->page_size, 0, 1, phys_mapping_entry, 0, 0, prot, prot, 0) != 0) {
+    if (mach_vm_map(mach_task_self(), &mapped, kinfo->vm_page_size, 0, 1, phys_mapping_entry, 0, 0, prot, prot, 0) != 0) {
         mach_port_deallocate(mach_task_self(), phys_mapping_entry);
         phys_mapping_entry = MACH_PORT_NULL;
         return -1;
@@ -305,7 +316,7 @@ static int init_phys_mapping(void) {
     
     if (*(volatile uint64_t *)mapped == 0x1337123413371234) return -1; // fault page
     phys_mapping_base = vtophys(mapped);
-    mach_vm_deallocate(mach_task_self(), mapped, kinfo->page_size);
+    mach_vm_deallocate(mach_task_self(), mapped, kinfo->vm_page_size);
     
     if (phys_mapping_base == 0) {
         mach_port_deallocate(mach_task_self(), phys_mapping_entry);
@@ -326,11 +337,11 @@ uint64_t phys_map_page(uint64_t pa) {
     vm_prot_t prot = VM_PROT_READ | VM_PROT_WRITE;
     uint64_t addr = 0;
     
-    mach_vm_map(mach_task_self(), &addr, kinfo->page_size, 0, 1, phys_mapping_entry, map_offset, 0, prot, prot, 0);
+    mach_vm_map(mach_task_self(), &addr, kinfo->vm_page_size, 0, 1, phys_mapping_entry, map_offset, 0, prot, prot, 0);
     return addr + page_offset;
 }
 
 void phys_unmap_page(uint64_t va) {
     if (va == 0) return;
-    mach_vm_deallocate(mach_task_self(), trunc_page_kernel(va), kinfo->page_size);
+    mach_vm_deallocate(mach_task_self(), trunc_page_kernel(va), kinfo->vm_page_size);
 }

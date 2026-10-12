@@ -7,6 +7,25 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+typedef enum {
+    SOC_UNKNOWN = -1,
+    SOC_A7,
+    SOC_A8,
+    SOC_A8X,
+    SOC_A9,
+    SOC_A9X,
+    SOC_A10,
+    SOC_A10X,
+    SOC_A11,
+    SOC_A12,
+    SOC_A12X,
+    SOC_A12Z,
+    SOC_A13
+} soc_type_t;
+
+soc_type_t get_soc_type(void);
+void run_as_mobile(void (^action)(void));
+
 @implementation AmethystConfig
 - (id)init {
     self = [super init];
@@ -14,45 +33,12 @@
 }
 
 - (void)loadConfig {
-    uint32_t cpu = 0;
-    size_t size = sizeof(cpu);
-    sysctlbyname("hw.cpufamily", &cpu, &size, NULL, 0);
-    
-    self.trigonSupported = !(cpu == CPUFAMILY_ARM_VORTEX_TEMPEST || cpu == CPUFAMILY_ARM_LIGHTNING_THUNDER);
-    self.defaults = [NSUserDefaults standardUserDefaults];
-    
-    if ([self.defaults objectForKey:@"init"] == NULL) {
-        NSDictionary *dict = [self.defaults dictionaryRepresentation];
-        for (NSString *key in dict) [self.defaults removeObjectForKey:key];
-        
-        self.themeName = @"Amethyst";
-        self.generator = @"0x1111111111111111";
-        self.exploit = self.trigonSupported ? Exploit_Trigon : Exploit_Hemlock;
-        self.enableTweaks = true;
-        self.lightMode = true;
-
-        [self.defaults setObject:self.themeName forKey:@"themeName"];
-        [self.defaults setObject:self.generator forKey:@"generator"];
-        [self.defaults setInteger:self.exploit forKey:@"exploit"];
-        [self.defaults setBool:self.enableTweaks forKey:@"enableTweaks"];
-        [self.defaults setBool:YES forKey:@"init"];
-    } else {
-        if ((self.themeName = [self.defaults stringForKey:@"themeName"]) == NULL) self.themeName = @"Amethyst";
-        if ((self.generator = [self.defaults stringForKey:@"generator"]) == NULL) self.generator = @"0x1111111111111111";
-        self.enableTweaks = [self.defaults boolForKey:@"enableTweaks"];
-        self.lightMode = [self.defaults boolForKey:@"lightMode"];
-        
-        self.exploit = [self.defaults integerForKey:@"exploit"];
-        if (self.exploit == Exploit_Trigon && !self.trigonSupported) {
-            self.exploit = Exploit_Hemlock;
-            [self.defaults setInteger:self.exploit forKey:@"exploit"];
-        }
-    }
-    
-    [self.defaults synchronize];
+    soc_type_t soc = get_soc_type();
+    self.trigonSupported = (soc != SOC_A12 && soc != SOC_A12X && soc != SOC_A12Z && soc != SOC_A13 && soc != SOC_A8X);
+    self.trigonRecommended = (self.trigonSupported && soc != SOC_A9 && soc != SOC_A9X);
     NSString *docs_dir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask, YES) objectAtIndex:0];
     self.trigonCachePath = [docs_dir stringByAppendingPathComponent:@"trigon.plist"];
-    
+
     int fd = open([self.trigonCachePath UTF8String], O_RDONLY);
     if (fd >= 0) {
         size_t size = lseek(fd, 0, SEEK_END);
@@ -71,16 +57,81 @@
     if (self.trigonCache == NULL) {
         self.trigonCache = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     }
+    
+    self.configPath = [docs_dir stringByAppendingPathComponent:@"config.plist"];
+    fd = open([self.configPath UTF8String], O_RDONLY);
+    if (fd >= 0) {
+        size_t size = lseek(fd, 0, SEEK_END);
+        lseek(fd, 0, SEEK_SET);
+        
+        void *data = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+        close(fd);
+        
+        if (data != MAP_FAILED) {
+            CFDataRef cf_data = CFDataCreateWithBytesNoCopy(NULL, data, size, NULL);
+            self.config = (CFMutableDictionaryRef)CFPropertyListCreateWithData(NULL, cf_data, kCFPropertyListMutableContainersAndLeaves, NULL, NULL);
+            munmap(data, size);
+        }
+    }
+    
+    if (self.config == NULL) {
+        self.config = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    }
+
+    if ([(__bridge NSDictionary *)amethyst.config valueForKey:@"init"] == NULL) {
+        self.themeName = @"Amethyst";
+        self.generator = @"0x1111111111111111";
+        self.exploit = self.trigonRecommended ? Exploit_Trigon : Exploit_Hemlock;
+        self.enableTweaks = true;
+        self.lightMode = true;
+
+        [(__bridge NSMutableDictionary *)amethyst.config setValue:@"amethyst" forKey:@"init"];
+        [self saveConfig];
+    } else {
+        self.themeName = [(__bridge NSDictionary *)amethyst.config valueForKey:@"themeName"];
+        self.generator = [(__bridge NSDictionary *)amethyst.config valueForKey:@"generator"];
+        self.exploit = [((NSNumber *)[(__bridge NSDictionary *)amethyst.config valueForKey:@"exploit"]) integerValue];
+        self.enableTweaks = [((NSNumber *)[(__bridge NSDictionary *)amethyst.config valueForKey:@"enableTweaks"]) integerValue];
+        self.lightMode = [((NSNumber *)[(__bridge NSDictionary *)amethyst.config valueForKey:@"lightMode"]) integerValue];
+        
+        if (self.themeName == NULL) self.themeName = @"Amethyst";
+        if (self.generator == NULL) self.generator = @"0x1111111111111111";
+        if (self.exploit == Exploit_Trigon && !self.trigonSupported) {
+            self.exploit = Exploit_Hemlock;
+            [(__bridge NSMutableDictionary *)amethyst.config setValue:@(self.exploit) forKey:@"exploit"];
+        }
+    }
 }
 
 - (void)saveConfig {
-    [self.defaults setObject:self.themeName forKey:@"themeName"];
-    [self.defaults setObject:self.generator forKey:@"generator"];
-    [self.defaults setInteger:self.exploit forKey:@"exploit"];
-    [self.defaults setBool:self.enableTweaks forKey:@"enableTweaks"];
-    [self.defaults setBool:self.lightMode forKey:@"lightMode"];
-    [self.defaults setBool:YES forKey:@"init"];
-    [self.defaults synchronize];
+    run_as_mobile(^{
+        [(__bridge NSMutableDictionary *)amethyst.config setValue:self.themeName forKey:@"themeName"];
+        [(__bridge NSMutableDictionary *)amethyst.config setValue:self.generator forKey:@"generator"];
+        [(__bridge NSMutableDictionary *)amethyst.config setValue:@(self.exploit) forKey:@"exploit"];
+        [(__bridge NSMutableDictionary *)amethyst.config setValue:(self.enableTweaks ? @(1) : @(0)) forKey:@"enableTweaks"];
+        [(__bridge NSMutableDictionary *)amethyst.config setValue:(self.lightMode ? @(1) : @(0)) forKey:@"lightMode"];
+        
+        CFDataRef data = CFPropertyListCreateData(NULL, amethyst.config, kCFPropertyListBinaryFormat_v1_0, 0, NULL);
+        if (data == NULL) return;
+        
+        unlink([amethyst.configPath UTF8String]);
+        FILE *file = fopen([amethyst.configPath UTF8String], "wb+");
+        if (file == NULL) {
+            CFRelease(data);
+            return;
+        }
+        
+        fwrite(CFDataGetBytePtr(data), CFDataGetLength(data), 1, file);
+        fflush(file);
+        fcntl(file->_file, F_FULLFSYNC, 0);
+        
+        fclose(file);
+        CFRelease(data);
+        
+        chmod([amethyst.configPath UTF8String], 0777);
+        chown([amethyst.configPath UTF8String], 501, 501);
+        sync();
+    });
 }
 
 - (NSString *)exploitString {
@@ -182,21 +233,26 @@ int trigon_cache_set_bool(char *key, bool value) {
 
 void trigon_cache_sync(void) {
     usleep(10000);
-    CFDataRef data = CFPropertyListCreateData(NULL, amethyst.trigonCache, kCFPropertyListBinaryFormat_v1_0, 0, NULL);
-    if (data == NULL) return;;
-    
-    unlink([amethyst.trigonCachePath UTF8String]);
-    FILE *file = fopen([amethyst.trigonCachePath UTF8String], "wb+");
-    if (file == NULL) {
+    run_as_mobile(^{
+        CFDataRef data = CFPropertyListCreateData(NULL, amethyst.trigonCache, kCFPropertyListBinaryFormat_v1_0, 0, NULL);
+        if (data == NULL) return;
+  
+        unlink([amethyst.trigonCachePath UTF8String]);
+        FILE *file = fopen([amethyst.trigonCachePath UTF8String], "wb+");
+        if (file == NULL) {
+            CFRelease(data);
+            return;
+        }
+        
+        fwrite(CFDataGetBytePtr(data), CFDataGetLength(data), 1, file);
+        fflush(file);
+        fcntl(file->_file, F_FULLFSYNC, 0);
+        
+        fclose(file);
         CFRelease(data);
-        return;
-    }
-    
-    fwrite(CFDataGetBytePtr(data), CFDataGetLength(data), 1, file);
-    fflush(file);
-    fcntl(file->_file, F_FULLFSYNC, 0);
-    
-    fclose(file);
-    CFRelease(data);
-    sync();
+        
+        chmod([amethyst.trigonCachePath UTF8String], 0777);
+        chown([amethyst.trigonCachePath UTF8String], 501, 501);
+        sync();
+    });
 }

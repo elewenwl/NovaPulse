@@ -24,7 +24,6 @@
 #define ZEBRA_SOURCES_FILE "/var/mobile/Library/Application Support/xyz.willy.Zebra/sources.list"
 #define ZEBRA_APP_SUPPORT "/var/mobile/Library/Application Support/xyz.willy.Zebra"
 
-
 static const char *restore_rootfs_leftovers[] = {
     "/var/lib",
     "/var/jb",

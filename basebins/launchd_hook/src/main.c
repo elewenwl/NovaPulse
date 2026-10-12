@@ -30,42 +30,38 @@ static int init_info(void) {
     sscanf(str, "%d.%d.%d", &kinfo->version[0], &kinfo->version[1], &kinfo->version[2]);
     CFRelease(dict);
 
-    uint32_t cpu_family = 0;
-    size_t size = sizeof(cpu_family);
-    sysctlbyname("hw.cpufamily", &cpu_family, &size, NULL, 0);
-
-    switch (cpu_family) {
-        case CPUFAMILY_ARM_CYCLONE: // A7
-            kinfo->page_size = 0x1000;
+    switch (get_soc_type()) {
+        case SOC_A7:
+        case SOC_A8:
+            kinfo->pmap_page_size = 0x1000;
+            kinfo->vm_page_size = 0x1000;
             kinfo->protections.kpp = true;
             break;
-        case CPUFAMILY_ARM_TYPHOON: // A8
-            kinfo->page_size = 0x1000;
+        case SOC_A8X:
+            kinfo->pmap_page_size = 0x1000;
+            kinfo->vm_page_size = 0x4000;
             kinfo->protections.kpp = true;
             break;
-        case CPUFAMILY_ARM_TWISTER: // A9
-            kinfo->page_size = 0x4000;
+        case SOC_A9:
+        case SOC_A9X:
+            kinfo->pmap_page_size = 0x4000;
+            kinfo->vm_page_size = 0x4000;
             kinfo->protections.kpp = true;
             break;
-        case CPUFAMILY_ARM_HURRICANE: // A10
-            kinfo->page_size = 0x4000;
+        case SOC_A10:
+        case SOC_A10X:
+        case SOC_A11:
+            kinfo->pmap_page_size = 0x4000;
+            kinfo->vm_page_size = 0x4000;
             kinfo->protections.ktrr = true;
             kinfo->protections.pan = true;
             break;
-        case CPUFAMILY_ARM_MONSOON_MISTRAL: // A11
-            kinfo->page_size = 0x4000;
-            kinfo->protections.ktrr = true;
-            kinfo->protections.pan = true;
-            break;
-        case CPUFAMILY_ARM_VORTEX_TEMPEST: // A12
-            kinfo->page_size = 0x4000;
-            kinfo->protections.ktrr = true;
-            kinfo->protections.pan = true;
-            kinfo->protections.pac = true;
-            kinfo->protections.ppl = true;
-            break;
-        case CPUFAMILY_ARM_LIGHTNING_THUNDER: // A13
-            kinfo->page_size = 0x4000;
+        case SOC_A12:
+        case SOC_A12X:
+        case SOC_A12Z:
+        case SOC_A13:
+            kinfo->pmap_page_size = 0x4000;
+            kinfo->vm_page_size = 0x4000;
             kinfo->protections.ktrr = true;
             kinfo->protections.pan = true;
             kinfo->protections.pac = true;
@@ -99,6 +95,7 @@ static int init_info(void) {
     kinfo->offsets.pmap_cs_code_directory.trust = 0x54;
     kinfo->offsets.vnode.ubcinfo = 0x78;
     kinfo->offsets.specinfo.flags = 0x10;
+    kinfo->offsets.proc.task = 0x10;
 
     if (kinfo->version[0] == 12 && kinfo->version[1] == 0) {
         kinfo->offsets.vm_map.flags = 0x10c;
@@ -117,6 +114,7 @@ static int init_info(void) {
         kinfo->offsets.proc.ucred = 0xf8;
         kinfo->offsets.proc.csflags = 0x290;
         kinfo->offsets.proc.p_textvp = 0x230;
+        kinfo->offsets.proc.p_hash = 0xa0;
         kinfo->offsets.vnode.namecache = 0x40;
         kinfo->offsets.ubc_info.cs_blob = 0x50;
         kinfo->offsets.namecache.vnode = 0x48;
@@ -133,6 +131,7 @@ static int init_info(void) {
         kinfo->offsets.proc.ucred = 0x100;
         kinfo->offsets.proc.csflags = 0x298;
         kinfo->offsets.proc.p_textvp = 0x238;
+        kinfo->offsets.proc.p_hash = 0xa8;
         kinfo->offsets.vnode.namecache = 0x40;
         kinfo->offsets.ubc_info.cs_blob = 0x50;
         kinfo->offsets.namecache.vnode = 0x48;
@@ -149,6 +148,8 @@ static int init_info(void) {
     kinfo->patches.dynamic_trustcache = dict_get_u64(plist, "dynamic_trustcache");
     kinfo->patches.static_trustcache = dict_get_u64(plist, "static_trustcache");
     kinfo->patches.ptov_table = dict_get_u64(plist, "ptov_table");
+    kinfo->patches.pidhashtbl_ptr = dict_get_u64(plist, "pidhashtbl_ptr");
+    kinfo->patches.pidhash_ptr = dict_get_u64(plist, "pidhash_ptr");
     kinfo->patches.gPhysBase = dict_get_u64(plist, "gPhysBase");
     kinfo->patches.gVirtBase = dict_get_u64(plist, "gVirtBase");
     kinfo->patches.pplrw_entry = dict_get_u64(plist, "pplrw_entry");
@@ -162,16 +163,17 @@ static int init_info(void) {
     if (getenv("AMETHYST") == NULL) {
         kinfo->first_run = 1;
     }
+
+    xpc_release(plist);
     return 0;
 }
-
-__attribute__((constructor)) void ctor(void) {
-    if (init_info() != 0) return;
+__attribute__((constructor)) void ctor(int argc, char **argv, char **envp, char **apple) {
+    if (basebin_init(apple) != 0 || init_info() != 0) return;
     if ((kinfo->self_proc_addr = find_proc_for_pid(getpid())) == 0) return;
     if ((kinfo->self_task_addr = find_task_for_pid(getpid())) == 0) return;
     if ((kinfo->self_port_addr = find_ipc_port(mach_task_self())) == 0) return;
 
-    set_mac_slot(-1, kinfo->self_proc_addr, 1, 0);
+    set_mac_slot(-1, kinfo->self_proc_addr, SANDBOX_SLOT, 0);
     add_cs_flag(-1, kinfo->self_proc_addr, CS_PLATFORM_PATH|CS_DEBUGGED|CS_INVALID_ALLOWED|CS_GET_TASK_ALLOW|CS_VALID);
     remove_cs_flag(-1, kinfo->self_proc_addr, CS_KILL|CS_HARD|CS_RESTRICT|CS_ENFORCEMENT|CS_REQUIRE_LV);
 
@@ -187,15 +189,13 @@ __attribute__((constructor)) void ctor(void) {
 
     if (kinfo->first_run == 0) {
         if (kread8(self_pmap + koffsetof(pmap, cs_enforced)) == 1) {
-            uint64_t pa = kvtophys(self_pmap + koffsetof(pmap, cs_enforced));
-            if (pa != 0) ppl_write8(pa, 0);
+            ppl_write8(self_pmap + koffsetof(pmap, cs_enforced), 0);
 
             uint64_t pmap_cs_entry = proc_get_pmap_cs_entry(kinfo->self_proc_addr);
             if (pmap_cs_entry != 0) {
                 uint32_t current_trustlevel = kread32(pmap_cs_entry + koffsetof(pmap_cs_code_directory, trust));
                 if (current_trustlevel != 1) {
-                    uint64_t trustlevel_pa = kvtophys(pmap_cs_entry + koffsetof(pmap_cs_code_directory, trust));
-                    if (trustlevel_pa != 0) ppl_write32(trustlevel_pa, 1);
+                    ppl_write32(pmap_cs_entry + koffsetof(pmap_cs_code_directory, trust), 1);
                 }
             }    
         }

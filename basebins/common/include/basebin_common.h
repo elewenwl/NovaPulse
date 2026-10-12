@@ -48,6 +48,87 @@
 #include <sys/fsgetpath.h>
 #include <pwd.h>
 #include <CommonCrypto/CommonDigest.h>
+#include <pthread.h>
+
+typedef struct __attribute__((packed)) {
+    uint32_t mach_init_symbol;
+    uint32_t cc_sha1_symbol;
+    uint32_t cc_sha256_symbol;
+    uint32_t cc_sha384_symbol;
+    uint32_t ccdigest_init_symbol;
+    uint32_t ccdigest_update_symbol;
+    uint32_t cc_clear_symbol;
+    uint32_t getenv_symbol;
+    uint32_t strstr_symbol;
+    uint32_t dyld_start_symbol;
+    uint32_t mach_task_self_symbol;
+    uint32_t errno_symbol;
+    uint32_t sb_ext_offset;
+    uint32_t page_size;
+    uint32_t arm64e_host;
+    uint8_t ios_version[4];
+    uint64_t ns_init_platform_symbol;
+    uint64_t use_dyld3_symbol;
+    char dyld_insert_str[32];
+    char base_hook_str[32];
+    char sb_policy_str[32];
+} dyld_patch_handoff_t;
+
+typedef struct {
+    dyld_patch_handoff_t *dyld_handoff;
+    uint32_t ios_version[3];
+    uint64_t dsc_slide;
+    uint32_t page_size;
+    char *sb_ext_list;
+    char *exec_path;
+    char *proc_name;
+    bool is_xpcproxy;
+    bool arm64e_host;
+    bool stock_libswift;
+    bool dyld3_mode;
+    bool init_done;
+} basebin_info_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t infoArrayCount;
+    const struct dyld_image_info *infoArray;
+    dyld_image_notifier notification;
+    bool processDetachedFromSharedRegion;
+    bool libSystemInitialized;
+    const struct mach_header *dyldImageLoadAddress;
+    void *jitInfo;
+    const char *dyldVersion;
+    const char *errorMessage;
+    uintptr_t terminationFlags;
+    void *coreSymbolicationShmPage;
+    uintptr_t systemOrderFlag;
+    uintptr_t uuidArrayCount;
+    const struct dyld_uuid_info *uuidArray;
+    struct dyld_all_image_infos *dyldAllImageInfosAddress;
+    uintptr_t initialImageCount;
+    uintptr_t errorKind;
+    const char *errorClientOfDylibPath;
+    const char *errorTargetDylibPath;
+    const char *errorSymbol;
+    uintptr_t sharedCacheSlide;
+    uint8_t sharedCacheUUID[16];
+    uintptr_t sharedCacheBaseAddress;
+    uint64_t infoArrayChangeTimestamp;
+    const char *dyldPath;
+    mach_port_t notifyPorts[DYLD_MAX_PROCESS_INFO_NOTIFY_COUNT];
+    uintptr_t reserved[11-(DYLD_MAX_PROCESS_INFO_NOTIFY_COUNT/2)];
+    uint64_t sharedCacheFSID;
+    uint64_t sharedCacheFSObjID;
+    uintptr_t compact_dyld_image_info_addr;
+    size_t compact_dyld_image_info_size;
+    uint32_t platform;
+    uint32_t aotInfoCount;
+    const struct dyld_aot_image_info* aotInfoArray;
+    uint64_t aotInfoArrayChangeTimestamp;
+    uintptr_t aotSharedCacheBaseAddress;
+    uint8_t aotSharedCacheUUID[16];
+} dyld_all_image_infos_t;
 
 struct _os_alloc_once_s {
     long once;
@@ -97,5 +178,9 @@ extern void xpc_dictionary_set_mach_send(xpc_object_t xdict, const char *key, ma
 extern int sandbox_check(pid_t pid, const char *operation, uint32_t type, ...);
 extern int64_t sandbox_extension_consume(const char *extension_token);
 extern int sandbox_check_by_audit_token(audit_token_t at, const char *op, int filter, ...);
+
+extern basebin_info_t basebin_info;
+
+int basebin_init(char **apple);
 
 #endif /* basebins_common_h */

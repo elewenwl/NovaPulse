@@ -12,6 +12,8 @@
 #define PROC_PIDPATHINFO_MAXSIZE                (4*1024)
 #define PROC_ALL_PIDS                           1
 #define RB2_USERREBOOT                          0x2000000000000000LLU
+#define PID_MAX                                 99999
+#define PID_MIN                                 0
 
 #define koffsetof(struct, entry) kinfo->offsets.struct.entry
 
@@ -23,7 +25,8 @@ typedef struct {
     uint64_t kern_proc_addr;
     uint64_t kernel_base;
     uint64_t kernel_slide;
-    uint32_t page_size;
+    uint32_t pmap_page_size;
+    uint32_t vm_page_size;
     mach_port_t tfp0;
     uint64_t self_ttep;
     uint64_t cpu_ttep;
@@ -53,6 +56,7 @@ typedef struct {
         } task;
 
         struct {
+            uint32_t task;
             uint32_t pid;
             uint32_t p_fd;
             uint32_t p_flag;
@@ -61,6 +65,7 @@ typedef struct {
             uint32_t ucred;
             uint32_t csflags;
             uint32_t p_textvp;
+            uint32_t p_hash;
         } proc;
         
         struct {
@@ -137,6 +142,8 @@ typedef struct {
         uint64_t dynamic_trustcache;
         uint64_t static_trustcache;
         uint64_t ptov_table;
+        uint64_t pidhash_ptr;
+        uint64_t pidhashtbl_ptr;
         uint64_t gPhysBase;
         uint64_t gVirtBase;
         uint64_t pplrw_entry;

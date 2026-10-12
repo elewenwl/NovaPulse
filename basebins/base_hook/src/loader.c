@@ -3,8 +3,7 @@
 #include "basebin_jbserver.h"
 #include "loader.h"
 
-static orig_spawn_t orig_posix_spawn = NULL;
-static orig_spawn_t orig_posix_spawnp = NULL;
+static int (*posix_spawn_orig)(pid_t *, const char *, posix_spawn_file_actions_t *, posix_spawnattr_t *, char **, char **) = NULL;
 
 static bool is_interpreted_script(const char *path) {
     if (path == NULL) return false;
@@ -15,19 +14,6 @@ static bool is_interpreted_script(const char *path) {
     read(fd, data, 2);
     close(fd);
     return (data[0] == '#' && data[1] == '!');
-}
-
-__attribute__((naked)) static int sys_execve(char *path, char **argv, char **env) {
-    asm("mov x16, #59");
-    asm("svc #0x80");
-    asm("b.cc 0f");
-    asm("stp x29, x30, [sp, #-0x10]!");
-    asm("mov x29, sp");
-    asm("bl _cerror_nocancel");
-    asm("mov sp, x29");
-    asm("ldp x29, x30, [sp], #0x10");
-    asm("0:");
-    asm("ret");
 }
 
 static bool loader_blocked(const char *path, char **argv, posix_spawnattr_t *attr) {
@@ -44,8 +30,7 @@ static bool loader_blocked(const char *path, char **argv, posix_spawnattr_t *att
     return false;
 }
 
-static int spawn_handler(pid_t *pid, const char *path, posix_spawn_file_actions_t *file_actions, posix_spawnattr_t *attr, char **argv, char **env, bool is_exec, orig_spawn_t orig_spawn) {
-    if (orig_spawn == NULL) return -1;
+static int spawn_handler(pid_t *pid, const char *path, posix_spawn_file_actions_t *file_actions, posix_spawnattr_t *attr, char **argv, char **env, bool is_exec) {
     if (!is_exec) {
         if (pid == NULL) {
             is_exec = true;
@@ -80,18 +65,18 @@ static int spawn_handler(pid_t *pid, const char *path, posix_spawn_file_actions_
     
     if (loader_blocked(path, argv, attr) || ((target_path = resolve_executable(path)) == NULL)) {
         if (is_exec) {
-            int status = orig_spawn(NULL, path, NULL, &target_attr, argv, env);
+            int status = posix_spawn_orig(NULL, path, NULL, &target_attr, argv, env);
             if (release_attr) posix_spawnattr_destroy(&target_attr);
             if (status == EINVAL) status = sys_execve((char *)path, argv, env);
             return status;
         } else {
-            int status = orig_spawn(pid, path, file_actions, &target_attr, argv, env);
+            int status = posix_spawn_orig(pid, path, file_actions, &target_attr, argv, env);
             if (release_attr) posix_spawnattr_destroy(&target_attr);
             return status;
         }
     }
 
-    char **target_env = env_copy(env, 5);
+    char **target_env = env_copy(env, 4);
     char **dyld_insert = env_get(target_env, "DYLD_INSERT_LIBRARIES");
     bool inject_hook = true;
 
@@ -107,12 +92,6 @@ static int spawn_handler(pid_t *pid, const char *path, posix_spawn_file_actions_
                     inject_hook = false;
                     continue;
                 }
-
-                char *resolved_lib = resolve_library(current);
-                if (resolved_lib != NULL) {
-                    jbserver_process_binary(resolved_lib, NULL);
-                    free(resolved_lib);
-                }
             }
             free(copy);
         }
@@ -120,9 +99,12 @@ static int spawn_handler(pid_t *pid, const char *path, posix_spawn_file_actions_
 
     if (getenv("DISABLE_TWEAKS") != NULL) env_set(target_env, "DISABLE_TWEAKS", "1", false);
     if (inject_hook) env_set(target_env, "DYLD_INSERT_LIBRARIES", "/usr/lib/base_hook.dylib", true);
+    if (!basebin_info.stock_libswift) {
+        env_set(target_env, "DYLD_FALLBACK_LIBRARY_PATH", "/usr/lib/libswift/stable:/usr/local/lib:/usr/lib:/lib:/Library", false);
+    }
+
     char **target_argv = argv;
     bool release_argv = false;
-    bool external_libswift = false;
 
     if (is_interpreted_script(target_path)) {
         char *interpreter_path = NULL;
@@ -130,7 +112,7 @@ static int spawn_handler(pid_t *pid, const char *path, posix_spawn_file_actions_
         uint32_t interpreter_argc = 0;
 
         if (resolve_interpreter(target_path, &interpreter_path, &interpreter_argv, &interpreter_argc) == 0) {
-            jbserver_process_binary(interpreter_path, &external_libswift);
+            jbserver_process_binary(interpreter_path);
             uint32_t arg_count = interpreter_argc + 2;
             if (argv != NULL) {
                 for (uint32_t i = 0; argv[i] != NULL; i++) arg_count++;
@@ -155,12 +137,7 @@ static int spawn_handler(pid_t *pid, const char *path, posix_spawn_file_actions_
             }
         }
     } else {
-        jbserver_process_binary(target_path, &external_libswift);
-    }
-
-    if (!use_stock_libswift()) {
-        if (external_libswift) jbserver_preload_binary(target_path);
-        env_set(target_env, "DYLD_FALLBACK_LIBRARY_PATH", "/usr/lib/libswift/stable", true);
+        jbserver_process_binary(target_path);
     }
     
     if (target_attr != NULL) {
@@ -185,28 +162,10 @@ static int spawn_handler(pid_t *pid, const char *path, posix_spawn_file_actions_
         }
     }
 
-    int status = orig_spawn(pid, target_path, file_actions, &target_attr, target_argv, target_env);
+    int status = posix_spawn_orig(pid, target_path, file_actions, &target_attr, target_argv, target_env);
     if (release_attr) posix_spawnattr_destroy(&target_attr);
     if (is_exec && status == EINVAL) {
         status = sys_execve(target_path, target_argv, target_env);
-    }
-
-    if (!is_exec && status == 0 && pid != NULL && (attr_flags & POSIX_SPAWN_START_SUSPENDED) != 0) {
-        pid_t target_pid = *pid;
-        if (target_pid > 1 || target_pid != getpid()) {
-            jbserver_unsandbox_t unsandbox_type = jbserver_unsandbox_type(target_path);
-            uid_t target_uid = getuid();
-            uid_t target_gid = getgid();
-
-            struct stat st = {0};
-            if (lstat(target_path, &st) == 0) {
-                if (S_ISREG(st.st_mode) == 1) {
-                    if ((st.st_mode & S_ISUID) == S_ISUID) target_uid = st.st_uid;
-                    if ((st.st_mode & S_ISGID) == S_ISGID) target_gid = st.st_gid;
-                }
-            }
-            jbserver_init_process(target_pid, target_uid, target_gid, unsandbox_type);
-        }
     }
 
     if (release_argv) {
@@ -224,19 +183,14 @@ static int spawn_handler(pid_t *pid, const char *path, posix_spawn_file_actions_
 }
 
 static int execve_hook(const char *path, char **argv, char **envp) {
-    return spawn_handler(NULL, path, NULL, NULL, argv, envp, true, orig_posix_spawn);
+    return spawn_handler(NULL, path, NULL, NULL, argv, envp, true);
 }
 
 static int posix_spawn_hook(pid_t *pid, const char *path, posix_spawn_file_actions_t *file_actions, posix_spawnattr_t *attr, char **argv, char **env) {
-    return spawn_handler(pid, path, file_actions, attr, argv, env, false, orig_posix_spawn);
-}
-
-static int posix_spawnp_hook(pid_t *pid, const char *path, posix_spawn_file_actions_t *file_actions, posix_spawnattr_t *attr, char **argv, char **env) {
-    return spawn_handler(pid, path, file_actions, attr, argv, env, false, orig_posix_spawnp);
+    return spawn_handler(pid, path, file_actions, attr, argv, env, false);
 }
 
 void init_loader(void) {
-    hook_function((void *)posix_spawn, (void *)posix_spawn_hook, (void **)&orig_posix_spawn);
-    hook_function((void *)posix_spawnp, (void *)posix_spawnp_hook, (void **)&orig_posix_spawnp);
+    hook_function((void *)posix_spawn, (void *)posix_spawn_hook, (void **)&posix_spawn_orig);
     hook_function((void *)execve, (void *)execve_hook, NULL);
 }

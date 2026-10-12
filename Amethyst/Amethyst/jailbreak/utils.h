@@ -127,6 +127,22 @@ typedef struct {
     struct mach_header_64 *hdr;
 } macho_mapping_t;
 
+typedef enum {
+    SOC_UNKNOWN = -1,
+    SOC_A7,
+    SOC_A8,
+    SOC_A8X,
+    SOC_A9,
+    SOC_A9X,
+    SOC_A10,
+    SOC_A10X,
+    SOC_A11,
+    SOC_A12,
+    SOC_A12X,
+    SOC_A12Z,
+    SOC_A13
+} soc_type_t;
+
 extern mach_port_t IOServiceGetMatchingService(mach_port_t, CFDictionaryRef);
 extern mach_port_t IORegistryEntryFromPath(mach_port_t, const char[512]);
 extern kern_return_t IORegistryEntryGetProperty(mach_port_t, const char[512], const char[4096], uint32_t *);
@@ -142,6 +158,7 @@ extern CFDictionaryRef _CFCopySystemVersionDictionary(void);
 extern int proc_listpids(uint32_t type, uint32_t typeinfo, void *buffer, int buffersize);
 extern int proc_name(int pid, void * buffer, uint32_t buffersize);
 
+soc_type_t get_soc_type(void);
 uint64_t find_proc_for_pid(pid_t pid);
 uint64_t find_task_for_pid(pid_t pid);
 pid_t find_pid_for_name(const char *name);

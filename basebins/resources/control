@@ -3,7 +3,7 @@ Architecture: iphoneos-arm
 Name: TNSv2 Updater
 Author: staturnz
 Priority: optional
-Version: 1.0.3
+Version: 1.1
 Description: Support package for updating Amethyst jailbreak files while jailbroken with TNSv2.
 Maintainer: staturnz
 Section: System

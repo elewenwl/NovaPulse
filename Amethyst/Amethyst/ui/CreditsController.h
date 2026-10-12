@@ -15,5 +15,4 @@
 - (id)init:(NSString *)name detail:(NSString *)detail linkUrl:(NSString *)linkUrl;
 @end
 
-
 #endif /* CreditsController_h */

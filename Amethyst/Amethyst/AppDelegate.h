@@ -6,7 +6,8 @@ typedef enum : NSUInteger {
 } AmethystExploitOption;
 
 @interface AmethystConfig : NSObject
-@property (nonatomic, strong) NSUserDefaults *defaults;
+@property (nonatomic, strong) NSString *configPath;
+@property (nonatomic, assign) CFMutableDictionaryRef config;
 @property (nonatomic, strong) NSString *trigonCachePath;
 @property (nonatomic, assign) CFMutableDictionaryRef trigonCache;
 @property (nonatomic, strong) NSString *themeName;
@@ -16,6 +17,7 @@ typedef enum : NSUInteger {
 @property (nonatomic, assign) bool enableTweaks;
 @property (nonatomic, assign) bool restoreRootfs;
 @property (nonatomic, assign) bool trigonSupported;
+@property (nonatomic, assign) bool trigonRecommended;
 @property (nonatomic, assign) CGFloat buttonCardWidth;
 @property (nonatomic, assign) CGFloat popupCardWidth;
 @property (nonatomic, assign) CGFloat popupCardHeight;

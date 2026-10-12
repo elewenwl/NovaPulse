@@ -24,7 +24,6 @@
 		2F1C1F962F907D5800839511 /* utils.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F1C1F942F907D5800839511 /* utils.c */; };
 		2F1C1F992F907D5E00839511 /* patchfinder.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F1C1F982F907D5E00839511 /* patchfinder.c */; };
 		2F1C1F9C2F907D6600839511 /* memory.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F1C1F9B2F907D6600839511 /* memory.c */; };
-		2F1C1FA12F907D7000839511 /* dyld.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F1C1F9E2F907D7000839511 /* dyld.c */; };
 		2F1C1FA22F907D7000839511 /* handoff.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F1C1FA02F907D7000839511 /* handoff.c */; };
 		2F1C1FA52F907DC200839511 /* macho.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F1C1FA42F907DC200839511 /* macho.c */; };
 		2F376B092F9BC942008E2EEB /* trustcache.c in Sources */ = {isa = PBXBuildFile; fileRef = 2F376B082F9BC942008E2EEB /* trustcache.c */; };
@@ -75,8 +74,6 @@
 		2F1C1F9A2F907D6600839511 /* memory.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = memory.h; sourceTree = "<group>"; };
 		2F1C1F9B2F907D6600839511 /* memory.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = memory.c; sourceTree = "<group>"; };
 		2F1C1F9D2F907D7000839511 /* handoff.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = handoff.h; sourceTree = "<group>"; };
-		2F1C1F9E2F907D7000839511 /* dyld.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = dyld.c; sourceTree = "<group>"; };
-		2F1C1F9F2F907D7000839511 /* dyld.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = dyld.h; sourceTree = "<group>"; };
 		2F1C1FA02F907D7000839511 /* handoff.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = handoff.c; sourceTree = "<group>"; };
 		2F1C1FA32F907DC200839511 /* macho.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = macho.h; sourceTree = "<group>"; };
 		2F1C1FA42F907DC200839511 /* macho.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = macho.c; sourceTree = "<group>"; };
@@ -216,8 +213,6 @@
 				2F1C1F922F907D5800839511 /* utils.h */,
 				2F1C1FA02F907D7000839511 /* handoff.c */,
 				2F1C1F9D2F907D7000839511 /* handoff.h */,
-				2F1C1F9E2F907D7000839511 /* dyld.c */,
-				2F1C1F9F2F907D7000839511 /* dyld.h */,
 				2F5125822FBCE2FF00AE1074 /* dma.c */,
 				2F5125812FBCE2FF00AE1074 /* dma.h */,
 				2F46C3552FEB31B900FFCCEB /* ppl.c */,
@@ -315,7 +310,6 @@
 				2F1C1F802F907BC100839511 /* hemlock.c in Sources */,
 				2FE4F39A2FC670AD008BE680 /* nvram.c in Sources */,
 				2F1C1F732F9045C700839511 /* Utilities.m in Sources */,
-				2F1C1FA12F907D7000839511 /* dyld.c in Sources */,
 				2F5125832FBCE2FF00AE1074 /* dma.c in Sources */,
 				2F1C1F992F907D5E00839511 /* patchfinder.c in Sources */,
 				2F1C1FA22F907D7000839511 /* handoff.c in Sources */,
@@ -470,9 +464,9 @@
 				INFOPLIST_FILE = Amethyst/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -482,7 +476,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Amethyst",
 				);
-				MARKETING_VERSION = 1.0.3;
+				MARKETING_VERSION = 1.1;
 				OTHER_LDFLAGS = (
 					"-framework",
 					IOSurface,
@@ -511,9 +505,9 @@
 				INFOPLIST_FILE = Amethyst/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -523,7 +517,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Amethyst",
 				);
-				MARKETING_VERSION = 1.0.3;
+				MARKETING_VERSION = 1.1;
 				OTHER_LDFLAGS = (
 					"-framework",
 					IOSurface,

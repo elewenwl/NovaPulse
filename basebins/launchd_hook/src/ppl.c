@@ -3,8 +3,8 @@
 #include "util.h"
 #include "ppl.h"
 
-#define PPL_PAGE_OF(x)              ((x) & ~(kinfo->page_size-1ULL))
-#define PPL_PAGE_OFFSET(x)          ((x) & (kinfo->page_size-1ULL))
+#define PPL_PAGE_OF(x)              ((x) & ~(kinfo->pmap_page_size-1ULL))
+#define PPL_PAGE_OFFSET(x)          ((x) & (kinfo->pmap_page_size-1ULL))
 
 #ifdef __arm64e__
 static pthread_mutex_t __ppl_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -38,7 +38,11 @@ static void ppl_set_page(uint64_t pa) {
     ppl_sync();
 }
 
-void ppl_write_buf(uint64_t pa, void *data, uint32_t size) {
+void ppl_write_buf(uint64_t va, void *data, uint32_t size) {
+    if (!KADDR_VALID(va) || data == NULL || size == 0) return;
+    uint64_t pa = kvtophys(va);
+    if (pa == 0) return;
+
     ppl_lock();
     uint64_t target_page = PPL_PAGE_OF(pa);
     uint64_t target_offset = PPL_PAGE_OFFSET(pa);
@@ -49,20 +53,20 @@ void ppl_write_buf(uint64_t pa, void *data, uint32_t size) {
     ppl_unlock();
 }
 
-void ppl_write8(uint64_t pa, uint8_t value) {
-    ppl_write_buf(pa, &value, 1);
+void ppl_write8(uint64_t va, uint8_t value) {
+    ppl_write_buf(va, &value, 1);
 }
 
-void ppl_write16(uint64_t pa, uint16_t value) {
-    ppl_write_buf(pa, &value, 2);
+void ppl_write16(uint64_t va, uint16_t value) {
+    ppl_write_buf(va, &value, 2);
 }
 
-void ppl_write32(uint64_t pa, uint32_t value) {
-    ppl_write_buf(pa, &value, 4);
+void ppl_write32(uint64_t va, uint32_t value) {
+    ppl_write_buf(va, &value, 4);
 }
 
-void ppl_write64(uint64_t pa, uint64_t value) {
-    ppl_write_buf(pa, &value, 8);
+void ppl_write64(uint64_t va, uint64_t value) {
+    ppl_write_buf(va, &value, 8);
 }
 
 #endif

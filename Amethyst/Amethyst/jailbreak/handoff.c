@@ -6,56 +6,105 @@
 #include "macho.h"
 #include "dma.h"
 #include "ppl.h"
-
 #include "trustcache.h"
 
 static jbserver_err_t jbserver_send_msg_with_reply(xpc_object_t request, xpc_object_t *output) {
-    struct xpc_global_data *gd = NULL;
+    struct xpc_global_data *global = NULL;
     if (_os_alloc_once_table[1].once == -1) {
-        gd = _os_alloc_once_table[1].ptr;
+        global = _os_alloc_once_table[1].ptr;
     } else {
-        gd = _os_alloc_once(&_os_alloc_once_table[1], 1337, NULL);
-        if (gd == NULL) _os_alloc_once_table[1].once = -1;
+        uint32_t num = (kinfo->version[0] == 13) ? 448 : 472;
+        global = _os_alloc_once(&_os_alloc_once_table[1], num, NULL);
+        if (global != NULL) _os_alloc_once_table[1].once = -1;
     }
 
-    if (gd == NULL) {
-        return JBSERVER_ERR_CLIENT_FAILURE;
-    }
-
-    if (gd->xpc_bootstrap_pipe == NULL) {
+    if (global == NULL) return JBSERVER_ERR_CLIENT_FAILURE;
+    if (global->xpc_bootstrap_pipe == NULL) {
         mach_port_t *ports = NULL;
         mach_msg_type_number_t count = 0;
         if (mach_ports_lookup(mach_task_self(), &ports, &count) == 0) {
-            gd->task_bootstrap_port = ports[0];
-            gd->xpc_bootstrap_pipe = (xpc_pipe_create_from_port(gd->task_bootstrap_port, 0));
+            global->task_bootstrap_port = ports[0];
+            global->xpc_bootstrap_pipe = xpc_pipe_create_from_port(global->task_bootstrap_port, 0);
         }
     }
 
-    if (gd->xpc_bootstrap_pipe == NULL) {
+    if (global->xpc_bootstrap_pipe == NULL) return JBSERVER_ERR_CLIENT_FAILURE;
+    if (!MACH_PORT_VALID(global->task_bootstrap_port)) {
+        global->task_bootstrap_port = MACH_PORT_NULL;
         return JBSERVER_ERR_CLIENT_FAILURE;
     }
-    
-    xpc_object_t xpc_pipe = gd->xpc_bootstrap_pipe;
-    xpc_dictionary_set_string(request, "name", "com.staturnz.jbserver");
+
+    xpc_object_t xpc_pipe = global->xpc_bootstrap_pipe;
     xpc_object_t reply = NULL;
-    
     xpc_pipe_routine(xpc_pipe, request, &reply);
-    if (reply == NULL) {
-        return JBSERVER_ERR_UNKNOWN_FAILURE;
-    }
     
+    if (reply == NULL) return JBSERVER_ERR_UNKNOWN_FAILURE;
+    jbserver_err_t err = (jbserver_err_t)xpc_dictionary_get_int64(reply, "error");
     if (output != NULL) *output = reply;
-    return (jbserver_err_t)xpc_dictionary_get_int64(reply, "error");
+    else xpc_release(reply);
+    return err;
 }
 
 static jbserver_err_t jbserver_send_msg(xpc_object_t request) {
     return jbserver_send_msg_with_reply(request, NULL);
 }
 
-jbserver_err_t jbserver_heartbeat(void) {
+static xpc_object_t jbserver_init_msg(jbserver_cmd_t cmd) {
     xpc_object_t request = xpc_dictionary_create(NULL, NULL, 0);
-    xpc_dictionary_set_uint64(request, "cmd", JBSERVER_CMD_HEARTBEAT);
-    return jbserver_send_msg(request);
+    xpc_dictionary_set_uint64(request, "cmd", cmd);
+    xpc_dictionary_set_string(request, "name", "com.staturnz.jbserver");
+    return request;
+}
+
+jbserver_err_t jbserver_heartbeat(void) {
+    xpc_object_t request = jbserver_init_msg(JBSERVER_CMD_HEARTBEAT);
+    jbserver_err_t err = jbserver_send_msg(request);
+    xpc_release(request);
+    return err;
+}
+
+jbserver_err_t jbserver_platformize(pid_t pid) {
+    xpc_object_t request = jbserver_init_msg(JBSERVER_CMD_PLATFORMIZE);
+    if (pid != getpid()) xpc_dictionary_set_int64(request, "pid", (int64_t)pid);
+
+    jbserver_err_t err = jbserver_send_msg(request);
+    xpc_release(request);
+    return err;
+}
+
+jbserver_err_t jbserver_unsandbox(pid_t pid) {
+    xpc_object_t request = jbserver_init_msg(JBSERVER_CMD_UNSANDBOX);
+    if (pid != getpid()) xpc_dictionary_set_int64(request, "pid", (int64_t)pid);
+
+    jbserver_err_t err = jbserver_send_msg(request);
+    xpc_release(request);
+    return err;
+}
+
+jbserver_err_t jbserver_set_uid_gid(pid_t pid, uid_t uid, gid_t gid) {
+    xpc_object_t request = jbserver_init_msg(JBSERVER_CMD_SET_UID_GID);
+    if (pid != getpid()) xpc_dictionary_set_int64(request, "pid", (int64_t)pid);
+    if (uid != -1) xpc_dictionary_set_int64(request, "uid", (int64_t)uid);
+    if (gid != -1) xpc_dictionary_set_int64(request, "gid", (int64_t)gid);
+
+    jbserver_err_t err = jbserver_send_msg(request);
+    xpc_release(request);
+    return err;
+}
+
+void jbserver_post_jailbreak(bool root, bool unsandbox) {
+    jbserver_platformize(getpid());
+    if (unsandbox) {
+        jbserver_unsandbox(getpid());
+    }
+
+    if (root) {
+        jbserver_set_uid_gid(getpid(), 0, 0);
+        setuid(0);
+        setuid(0);
+        setgid(0);
+        setgid(0);
+    }
 }
 
 static int extract_basebins(void) {
@@ -93,11 +142,12 @@ static void init_handoff_plist(void) {
     add_plist_entry(plist, CFSTR("kern_task_addr"), kinfo->kern_task_addr);
     add_plist_entry(plist, CFSTR("kernel_base"), kinfo->kernel_base);
     add_plist_entry(plist, CFSTR("kernel_slide"), kinfo->kernel_slide);
-    add_plist_entry(plist, CFSTR("page_size"), kinfo->page_size);
     add_plist_entry(plist, CFSTR("cpu_ttep"), kinfo->cpu_ttep);
     add_plist_entry(plist, CFSTR("static_trustcache"), kinfo->patches.static_trustcache);
     add_plist_entry(plist, CFSTR("dynamic_trustcache"), kinfo->patches.dynamic_trustcache);
     add_plist_entry(plist, CFSTR("ptov_table"), kinfo->patches.ptov_table);
+    add_plist_entry(plist, CFSTR("pidhash_ptr"), kinfo->patches.pidhash_ptr);
+    add_plist_entry(plist, CFSTR("pidhashtbl_ptr"), kinfo->patches.pidhashtbl_ptr);
     add_plist_entry(plist, CFSTR("gPhysBase"), kinfo->patches.gPhysBase);
     add_plist_entry(plist, CFSTR("gVirtBase"), kinfo->patches.gVirtBase);
     add_plist_entry(plist, CFSTR("pplrw_entry"), kinfo->patches.pplrw_entry);
@@ -118,7 +168,7 @@ int userspace_reboot(void) {
 }
 
 static int preload_basebin(const char *path) {
-    trustcache_add_binary(path);
+    if (trustcache_add_binary(path) != 0) return -1;
     chmod(path, 0755);
     sync();
     
@@ -144,9 +194,10 @@ static int preload_basebin(const char *path) {
             pid_t pid = -1;
          
             posix_spawnattr_t attr = NULL;
+            posix_spawnattr_init(&attr);
             posix_spawnattr_setflags(&attr, POSIX_SPAWN_START_SUSPENDED);
-            posix_spawn(&pid, args[0], &attr, NULL, args, NULL);
-            
+            posix_spawn(&pid, args[0], NULL, &attr, args, NULL);
+
             if (pid > 0) kill(pid, SIGKILL);
             usleep(10000);
         } else {
@@ -192,7 +243,7 @@ static int preload_basebin(const char *path) {
             pid_t pid = -1;
             posix_spawnattr_t attr = NULL;
             posix_spawnattr_setflags(&attr, POSIX_SPAWN_START_SUSPENDED);
-            posix_spawn(&pid, args[0], &attr, NULL, args, NULL);
+            posix_spawn(&pid, args[0], NULL, &attr, args, NULL);
             
             if (pid > 0) kill(pid, SIGKILL);
             usleep(10000);
@@ -202,6 +253,7 @@ static int preload_basebin(const char *path) {
     close(fd);
     return 0;
 }
+
 
 int jailbreak_handoff(void) {
     if (extract_basebins() != 0) return -1;
@@ -233,7 +285,7 @@ int jailbreak_handoff(void) {
     chmod("/usr/libexec", 0755);
     sync();
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 1; i++) {
         bool success = false;
         inject_launchd_hook();
         usleep(100000);
@@ -246,7 +298,6 @@ int jailbreak_handoff(void) {
             usleep(25000);
         }
         if (success) break;
-
     }
     return (jbserver_heartbeat() == 0x1337) ? 0 : -1;
 }

@@ -4,6 +4,7 @@
 #include "trustcache.h"
 #include "codesign.h"
 
+
 static int create_cs_blob(int fd, char *path, uint32_t slice_offset, uint64_t vnode, uint64_t ubc_info) {
     macho_ctx_t *macho = macho_load(path);
     if (macho == NULL) return -1;
@@ -42,7 +43,7 @@ static int create_cs_blob(int fd, char *path, uint32_t slice_offset, uint64_t vn
         existing_cs_blob = kread64(existing_cs_blob);
     }
 
-    if (!trustcache_check(cd_hash)) {
+    if (!trustcache_lock_check(cd_hash)) {
         trustcache_lock_add_hash(cd_hash, CS_HASHTYPE_SHA256);
     }
     
@@ -56,9 +57,8 @@ static int create_cs_blob(int fd, char *path, uint32_t slice_offset, uint64_t vn
     free(cs_data);
     if (status != 0) return -1;
     
-    usleep(1000);
     ubc_info = kread64(vnode + koffsetof(vnode, ubcinfo));
-    if (ubc_info == 0) return -1;
+    if (!KADDR_VALID(ubc_info)) return -1;
     
     uint64_t current_cs_blob = kread64(ubc_info + koffsetof(ubc_info, cs_blob));
     uint64_t target_cs_blob = 0;
@@ -83,7 +83,6 @@ static int create_cs_blob(int fd, char *path, uint32_t slice_offset, uint64_t vn
     kwrite32(target_cs_blob + offsetof(cs_blob_t, csb_flags), csb_flags);
 
     kwrite32(target_cs_blob + offsetof(cs_blob_t, csb_signer_type), CS_SIGNER_TYPE_UNKNOWN);
-   // kwrite32(target_cs_blob + offsetof(cs_blob_t, csb_reconstituted), 1);
     kwrite32(target_cs_blob + offsetof(cs_blob_t, csb_cpu_type), CPU_TYPE_ARM64);
     kwrite32(target_cs_blob + offsetof(cs_blob_t, csb_flags), csb_flags);
 
@@ -96,20 +95,12 @@ static int create_cs_blob(int fd, char *path, uint32_t slice_offset, uint64_t vn
     if (KADDR_VALID(pmap_cs_entry)) {
         uint32_t current_trustlevel = kread32(pmap_cs_entry + koffsetof(pmap_cs_code_directory, trust));
         if (current_trustlevel != 1) {
-            uint64_t trustlevel_pa = kvtophys(pmap_cs_entry + koffsetof(pmap_cs_code_directory, trust));
-            if (trustlevel_pa != 0) {
-                ppl_write32(trustlevel_pa, 1);
-                usleep(1000);
-
-                current_trustlevel = kread32(pmap_cs_entry + koffsetof(pmap_cs_code_directory, trust));
-                if (current_trustlevel != 1) ppl_write32(trustlevel_pa, 1);
-            }
+            ppl_write32(pmap_cs_entry + koffsetof(pmap_cs_code_directory, trust), 1);
         }
     }
 #endif
 
     fcntl(fd, F_FLUSH_DATA);
-    usleep(1000);
     return 0;
 }
 
@@ -118,14 +109,14 @@ int sign_binary(char *path, uint32_t le_offset, uint32_t le_size, uint32_t slice
     if (fd < 0) return -1;
 
     uint64_t vnode = vnode_for_fd(fd);
-    if (vnode == 0) goto err;
+    if (!KADDR_VALID(vnode)) goto err;
 
     uint64_t ubc_info = kread64(vnode + koffsetof(vnode, ubcinfo));
-    if (ubc_info == 0) goto err;
+    if (!KADDR_VALID(ubc_info)) goto err;
 
 #ifndef __arm64e__
     uint64_t cs_blob = kread64(ubc_info + koffsetof(ubc_info, cs_blob));
-    if (cs_blob != 0) return 0;
+    if (KADDR_VALID(cs_blob)) return 0;
 #endif
 
     if (create_cs_blob(fd, path, slice_offset, vnode, ubc_info) != 0) goto err;
@@ -136,17 +127,4 @@ int sign_binary(char *path, uint32_t le_offset, uint32_t le_size, uint32_t slice
 err:
     if (fd >= 0) close(fd);
     return -1;
-}
-
-int fixup_cs_flags(uint64_t proc) {
-    if (proc == 0) return -1;
-    uint32_t add_flags = CS_PLATFORM_BINARY | CS_VALID | CS_DEBUGGED | CS_INVALID_ALLOWED | CS_GET_TASK_ALLOW | CS_EXECSEG_SKIP_LV;
-    uint32_t remove_flags = CS_RESTRICT | CS_HARD | CS_KILL | CS_REQUIRE_LV | CS_FORCED_LV | CS_ENFORCEMENT;
-
-    uint32_t cs_flags = kread32(proc + koffsetof(proc, csflags));
-    cs_flags &= ~remove_flags;
-    cs_flags |= add_flags;
-
-    kwrite32(proc + koffsetof(proc, csflags), cs_flags);
-    return 0;
 }

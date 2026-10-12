@@ -3,12 +3,14 @@ all:
 	$(MAKE) -C launchd_hook all
 	$(MAKE) -C base_hook all
 	$(MAKE) -C libjailbreak all
+	$(MAKE) -C dyld_patch all
 
 clean:
 	$(MAKE) -C jbutil clean
 	$(MAKE) -C launchd_hook clean
 	$(MAKE) -C base_hook clean
 	$(MAKE) -C libjailbreak clean
+	$(MAKE) -C dyld_patch clean
 
 	@rm -rf ./staging_tnsv2
 	@rm -rf ./staging_tnsv2_stub
@@ -30,7 +32,9 @@ tnsv2:
 	@cp -a ./launchd_hook/launchd_hook.dylib ./staging_tnsv2/amethyst/update/launchd_hook.dylib
 	@cp -a ./base_hook/base_hook.dylib ./staging_tnsv2/amethyst/update/base_hook.dylib
 	@cp -a ./libjailbreak/libjailbreak.dylib ./staging_tnsv2/amethyst/update/libjailbreak.dylib
-	
+	@cp -a ./dyld_patch/dyld_patch_text_12.bin ./staging_tnsv2/amethyst/update/dyld_patch_text_12.bin
+	@cp -a ./dyld_patch/dyld_patch_text_13.bin ./staging_tnsv2/amethyst/update/dyld_patch_text_13.bin
+
 	@chmod 0755 ./staging_tnsv2/amethyst/update/jbutil
 	@chmod 0755 ./staging_tnsv2/amethyst/update/launchd_hook.dylib
 	@chmod 0755 ./staging_tnsv2/amethyst/update/base_hook.dylib
@@ -51,6 +55,8 @@ package: clean all tnsv2
 	@cp -a ./launchd_hook/launchd_hook.dylib ./staging/amethyst/launchd_hook.dylib
 	@cp -a ./base_hook/base_hook.dylib ./staging/usr/lib/base_hook.dylib
 	@cp -a ./libjailbreak/libjailbreak.dylib ./staging/usr/lib/libjailbreak.dylib
+	@cp -a ./dyld_patch/dyld_patch_text_12.bin ./staging/amethyst/dyld_patch_text_12.bin
+	@cp -a ./dyld_patch/dyld_patch_text_13.bin ./staging/amethyst/dyld_patch_text_13.bin
 
 	@chmod 0755 ./staging/amethyst/jbutil
 	@chmod 0755 ./staging/amethyst/launchd_hook.dylib

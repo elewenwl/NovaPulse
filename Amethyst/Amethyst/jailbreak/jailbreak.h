@@ -29,7 +29,8 @@ typedef struct {
     uint64_t ipc_space_kernel;
     uint64_t kernel_base;
     uint64_t kernel_slide;
-    uint32_t page_size;
+    uint32_t pmap_page_size;
+    uint32_t vm_page_size;
     mach_port_t host_priv;
     uint64_t cpu_ttep;
     mach_port_t tfp0;
@@ -153,6 +154,8 @@ typedef struct {
         uint64_t dynamic_trustcache;
         uint64_t static_trustcache;
         uint64_t ptov_table;
+        uint64_t pidhash_ptr;
+        uint64_t pidhashtbl_ptr;
         uint64_t gVirtBase;
         uint64_t gPhysBase;
         uint64_t gPhysSize;

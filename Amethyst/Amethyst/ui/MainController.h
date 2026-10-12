@@ -26,10 +26,14 @@
 #define setConstantConstraint(target, offset) \
     [self.target constraintEqualToConstant:offset]
 
+#define centerButtonConstraint(target, ref) \
+    [self.target.centerXAnchor constraintEqualToAnchor:self.ref.optionButton.centerXAnchor], \
+    [self.target.centerYAnchor constraintEqualToAnchor:self.ref.optionButton.centerYAnchor]
+
 #define settingsOptionConstraint(option, last) \
     [self.option.optionView.centerXAnchor constraintEqualToAnchor:self.settingsPopupCard.cardView.centerXAnchor], \
     [self.option.optionView.widthAnchor constraintEqualToConstant:amethyst.popupCardWidth-60], \
-    [self.option.optionView.heightAnchor constraintEqualToConstant:amethyst.popupCardHeight], \
+    [self.option.optionView.heightAnchor constraintEqualToConstant:([self isJailbroken] ? 35 : amethyst.popupCardHeight)], \
     [self.option.optionView.topAnchor constraintEqualToAnchor:self.last.topAnchor constant:60]
 
 #define advancedOptionConstraint(option, last) \
@@ -67,23 +71,21 @@
     [self.button.optionView.widthAnchor constraintEqualToAnchor:self.exploitPopupCard.cardView.widthAnchor constant:-40.0f], \
     [self.button.optionView.heightAnchor constraintEqualToConstant:40.0f]
 
-
 @interface MainController : UIViewController <UITextFieldDelegate, UIPopoverPresentationControllerDelegate>
 
 @property (nonatomic, strong) UILayoutGuide *layoutGuide;
 @property (nonatomic, strong) UIImageView *titleIcon;
 @property (nonatomic, strong) UILabel *mainTitle;
 @property (nonatomic, strong) UILabel *mainSubtitle;
-@property (nonatomic, strong) UIActivityIndicatorView *jailbreakIndicator;
 @property (nonatomic, strong) UIImageView *bgImage;
 @property (nonatomic, strong) UIVisualEffectView *blurOverlay;
 @property (nonatomic, strong) UIView *gestureOverlay;
 @property (nonatomic, strong) UIView *alertOverlay;
 @property (nonatomic, strong) UILabel *versionLabel;
 @property (nonatomic, strong) UIImageView *versionIcon;
+@property (nonatomic, strong) UIActivityIndicatorView *statusIndicator;
 @property (nonatomic, assign) bool hideStatusBar;
 @property (nonatomic, assign) int isJailbroken;
-
 @property (nonatomic, strong) CreditsController *creditsTable;
 @property (nonatomic, strong) PopupOption *exploitOption;
 @property (nonatomic, strong) PopupOption *toggleOption;
@@ -91,6 +93,14 @@
 @property (nonatomic, strong) PopupOption *restoreRootFSOption;
 @property (nonatomic, strong) PopupOption *setGeneratorOption;
 @property (nonatomic, strong) PopupOption *themeOption;
+@property (nonatomic, strong) PopupOption *userspaceRebootOption;
+@property (nonatomic, strong) PopupOption *respringOption;
+@property (nonatomic, strong) PopupOption *iconCacheOption;
+@property (nonatomic, strong) PopupOption *settingsOption1;
+@property (nonatomic, strong) PopupOption *settingsOption2;
+@property (nonatomic, strong) PopupOption *settingsOption3;
+@property (nonatomic, strong) PopupOption *settingsOption4;
+@property (nonatomic, strong) PopupOption *settingsOption5;
 @property (nonatomic, strong) PopupCard *settingsPopupCard;
 @property (nonatomic, strong) PopupCard *creditsPopupCard;
 @property (nonatomic, strong) CardView *mainCard;
@@ -112,6 +122,7 @@
 @property (nonatomic, strong) PopupAlert *alert;
 @property (nonatomic, strong) ProgressRing *progressRing;
 @property (nonatomic, strong) InstallAlert *installAlert;
+@property (nonatomic, strong) LoadingAlert *loadingAlert;
 
 @end
 

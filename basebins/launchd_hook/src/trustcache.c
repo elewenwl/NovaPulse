@@ -6,12 +6,16 @@
 #include "trustcache.h"
 
 static trustcache_info_t *tc_info = NULL;
+static recent_trustcache_entry_t *recent_entries = NULL;
+static uint32_t recent_entry_idx = 0;
+static bool use_recent_entries = true;
 static pthread_mutex_t tc_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int trustcache_init(void) {
     if ((tc_info = calloc(1, sizeof(trustcache_info_t))) == NULL) goto err;
     static_trustcache_type_t static_type = STATIC_TC_TYPE_UNKNOWN;
     dynamic_trustcache_type_t dynamic_type = DYNAMIC_TC_TYPE_UNKNOWN;
+    bool created = false;
 
     if (kinfo->patches.static_trustcache == 0) {
         if (access("/usr/standalone/firmware/FUD/StaticTrustCache.img4", F_OK) == 0) {
@@ -151,6 +155,7 @@ int trustcache_init(void) {
             if (tc_info->dynamic_hdr == 0) {
                 dynamic_trustcache_hdr_v0_t *dynamic_trustcache = calloc(1, tc_info->dynamic_size);
                 if (dynamic_trustcache == NULL) goto err;
+                created = true;
 
                 dynamic_trustcache->next = next;
                 dynamic_trustcache->count = tc_info->dynamic_count;
@@ -203,7 +208,8 @@ int trustcache_init(void) {
             if (tc_info->dynamic_entries == 0) {
                 dynamic_trustcache_full_entry_t *user_entries = calloc(1, tc_info->dynamic_size);
                 if (user_entries == NULL) goto err;
-                
+                created = true;
+
                 uint64_t kern_entries = kalloc_wired(tc_info->dynamic_size);
                 if (kern_entries == 0) {
                     free(user_entries);
@@ -242,6 +248,18 @@ int trustcache_init(void) {
         } break;
         default: goto err;
     }
+
+    if ((tc_info->local_entries.data = calloc(1, tc_info->dynamic_size)) == NULL) goto err;
+    recent_entries = calloc(1, sizeof(recent_trustcache_entry_t) * 32);
+    tc_info->entries_stale = true;
+
+    if (created) {
+        trustcache_add_binary("/usr/lib/dyld_patch");
+        trustcache_add_binary("/usr/lib/libjailbreak.dylib");
+        trustcache_add_binary("/usr/lib/base_hook.dylib");
+        trustcache_add_binary("/amethyst/jbutil");
+        trustcache_add_binary("/amethyst/launchd_hook.dylib");
+    }
     return 0;
     
 err:
@@ -253,25 +271,61 @@ err:
     return -1;
 }
 
-void trustcache_reset(void) {
-    if (tc_info == NULL || tc_info->dynamic_entries == 0) return;
-    for (int i = 0; i < tc_info->dynamic_count; i++) {
-        if (tc_info->dynamic_type == DYNAMIC_TC_TYPE_V1) {
-            dynamic_trustcache_full_entry_t *user_entries = calloc(1, tc_info->dynamic_size);
-            if (user_entries == NULL) return;
+int trustcache_reset(void) {
+    if (tc_info == NULL || tc_info->dynamic_entries == 0) return -1;
+    if (tc_info->dynamic_type == DYNAMIC_TC_TYPE_V1) {
+        dynamic_trustcache_full_entry_t *user_entries = calloc(1, tc_info->dynamic_size);
+        if (user_entries == NULL) return - 1;
 
-            kread_buf(tc_info->dynamic_entries, user_entries, tc_info->dynamic_size);
-            for (uint32_t i = 0; i < tc_info->dynamic_count; i++) {
-                memset(user_entries[i].entry.cd_hash, 0x41, 20);
-                user_entries[i].entry.hash_type = 0;
-            }
-
-            kwrite_buf(tc_info->dynamic_entries, user_entries, tc_info->dynamic_size);
-            free(user_entries);
-        } else {
-            kzero(tc_info->dynamic_entries + 20, (tc_info->dynamic_size - sizeof(dynamic_trustcache_hdr_v0_t)) - 20);
+        kread_buf(tc_info->dynamic_entries, user_entries, tc_info->dynamic_size);
+        for (uint32_t i = 0; i < tc_info->dynamic_count; i++) {
+            memset(user_entries[i].entry.cd_hash, 0x41, 20);
+            user_entries[i].entry.hash_type = 0;
         }
+
+        kwrite_buf(tc_info->dynamic_entries, user_entries, tc_info->dynamic_size);
+        free(user_entries);
+    } else {
+        void *user_entries = calloc(1, tc_info->dynamic_count * 20);
+        if (user_entries == NULL) return -1;
+        memset(user_entries, 0x41, tc_info->dynamic_count * 20);
+        
+        kwrite_buf(tc_info->dynamic_entries + 20, user_entries, tc_info->dynamic_count * 20);
+        free(user_entries);
     }
+
+    usleep(1000);
+    trustcache_add_binary("/usr/lib/dyld_patch");
+    trustcache_add_binary("/usr/lib/libjailbreak.dylib");
+    trustcache_add_binary("/usr/lib/base_hook.dylib");
+    trustcache_add_binary("/amethyst/jbutil");
+    trustcache_add_binary("/amethyst/launchd_hook.dylib");
+    
+    tc_info->entries_stale = true;
+    if (recent_entries != NULL) {
+        use_recent_entries = false;
+        uint8_t empty[20] = {0};
+
+        for (uint32_t i = 0; i < 32; i++) {
+            if (memcmp(recent_entries[i].cd_hash, empty, 20) != 0) {
+                trustcache_add_hash(recent_entries[i].cd_hash, recent_entries[i].hash_type);
+            }
+        }
+
+        bzero(recent_entries, sizeof(recent_trustcache_entry_t) * 32);
+        recent_entry_idx = 0;
+        use_recent_entries = true;
+    }
+    return 0;
+}
+
+int trustcache_load_local_entries(void) {
+    if (tc_info->local_entries.data == NULL) return -1;
+    if (!tc_info->entries_stale) return 0;
+
+    kread_buf(tc_info->dynamic_entries, tc_info->local_entries.data, tc_info->dynamic_size);
+    tc_info->entries_stale = false;
+    return 0;
 }
 
 bool trustcache_static_check(uint8_t *cd_hash) {
@@ -284,15 +338,19 @@ bool trustcache_static_check(uint8_t *cd_hash) {
 
 bool trustcache_dynamic_check(uint8_t *cd_hash) {
     if (tc_info == NULL || tc_info->dynamic_entries == 0 || cd_hash == NULL) return false;
-    for (int i = 0; i < tc_info->dynamic_count; i++) {
+    if (trustcache_load_local_entries() != 0) return false;
+    
+    if (recent_entries != NULL && recent_entry_idx >= 1) {
+        for (uint32_t i = 0; i < recent_entry_idx; i++) {
+            if (memcmp(recent_entries[i].cd_hash, cd_hash, 20) == 0) return true;
+        }
+    }
+
+    for (uint32_t i = 0; i < tc_info->dynamic_count; i++) {
         if (tc_info->dynamic_type == DYNAMIC_TC_TYPE_V1) {
-            dynamic_trustcache_full_entry_t entry = {};
-            kread_buf(tc_info->dynamic_entries + (sizeof(dynamic_trustcache_full_entry_t) * i), &entry, sizeof(dynamic_trustcache_full_entry_t));
-            if (memcmp(&entry.entry.cd_hash[0], cd_hash, 20) == 0) return true;
+            if (memcmp(tc_info->local_entries.v1[i].entry.cd_hash, cd_hash, 20) == 0) return true;
         } else {
-            dynamic_trustcache_entry_v0_t entry = {};
-            kread_buf(tc_info->dynamic_entries + (sizeof(dynamic_trustcache_entry_v0_t) * i), &entry, sizeof(dynamic_trustcache_entry_v0_t));
-            if (memcmp(&entry.cd_hash[0], cd_hash, 20) == 0) return true;
+            if (memcmp(tc_info->local_entries.v0[i].cd_hash, cd_hash, 20) == 0) return true;
         }
     }
     return false;
@@ -303,18 +361,25 @@ bool trustcache_check(uint8_t *cd_hash) {
     return trustcache_dynamic_check(cd_hash);
 }
 
+void trustcache_add_recent(uint8_t *cd_hash, uint8_t hash_type) {
+    if (!use_recent_entries || recent_entries == NULL || cd_hash == NULL) return;
+    if ((recent_entry_idx + 1) >= 32) recent_entry_idx = 0;
+
+    memcpy(recent_entries[recent_entry_idx].cd_hash, cd_hash, 20);
+    recent_entries[recent_entry_idx++].hash_type = hash_type;
+}
+
 uint64_t trustcache_find_slot(void) {
     if (tc_info == NULL || tc_info->dynamic_entries == 0) return 0;
-    for (int i = 0; i < tc_info->dynamic_count; i++) {
+    if (trustcache_load_local_entries() != 0) return 0;
+
+    for (uint32_t i = 0; i < tc_info->dynamic_count; i++) {
         if (tc_info->dynamic_type == DYNAMIC_TC_TYPE_V1) {
-            dynamic_trustcache_full_entry_t entry = {};
-            kread_buf(tc_info->dynamic_entries + (sizeof(dynamic_trustcache_full_entry_t) * i), &entry, sizeof(dynamic_trustcache_full_entry_t));
-            
-            if (*(uint64_t *)entry.entry.cd_hash == 0x4141414141414141) {
+            if (*(uint64_t *)tc_info->local_entries.v1[i].entry.cd_hash == 0x4141414141414141) {
                 return tc_info->dynamic_entries + (sizeof(dynamic_trustcache_full_entry_t) * i) + offsetof(dynamic_trustcache_full_entry_t, entry.cd_hash);
             }
         } else {
-            if (kread32(tc_info->dynamic_entries + (sizeof(dynamic_trustcache_entry_v0_t) * i)) == 0x41414141) {
+            if (*(uint32_t *)tc_info->local_entries.v0[i].cd_hash == 0x41414141) {
                 return tc_info->dynamic_entries + (sizeof(dynamic_trustcache_entry_v0_t) * i);
             }
         }
@@ -326,12 +391,15 @@ int trustcache_add_hash(uint8_t *cd_hash, uint8_t hash_type) {
     if (tc_info == NULL || tc_info->dynamic_entries == 0 || cd_hash == NULL) return -1;
     uint64_t slot = trustcache_find_slot();
     if (slot == 0) {
-        trustcache_reset();
+        if (trustcache_reset() != 0) return -1;
         slot = trustcache_find_slot();
         if (slot == 0) return -1;
     }
     
+    tc_info->entries_stale = true;
+    trustcache_add_recent(cd_hash, hash_type);
     kwrite_buf(slot, cd_hash, 20);
+
     if (tc_info->dynamic_type == DYNAMIC_TC_TYPE_V1) {
         if (hash_type <= 0) hash_type = CS_HASHTYPE_SHA256;
         kwrite8(slot + 20, hash_type);
@@ -355,6 +423,13 @@ int trustcache_add_binary(const char *path) {
     }
     macho_release(macho);
     return 0;
+}
+
+bool trustcache_lock_check(uint8_t *cd_hash) {
+    pthread_mutex_lock(&tc_lock);
+    bool found = trustcache_check(cd_hash);
+    pthread_mutex_unlock(&tc_lock);
+    return found;
 }
 
 int trustcache_lock_add_hash(uint8_t *cd_hash, uint8_t hash_type) {

@@ -1,18 +1,37 @@
+#define VM_PROT_READ        0x0001
+#define VM_PROT_WRITE       0x0002
+#define VM_PROT_EXECUTE     0x0004
+#define VM_PROT_COPY        0x0010
+#define VM_FLAGS_ANYWHERE   0x0001
+#define VM_FLAGS_FIXED      0x0000
+
 .align 4
-.global _mem_copy, _mem_clear_cache, _mem_set_prot, _mem_allocate_internal, _mem_deallocate
+.global _mem_set_prot, _mem_set_rw, _mem_set_rx, _mem_allocate, _mem_allocate_fixed
+.global _mem_deallocate, _mem_copy, _mem_clear_cache, _mem_task_self
 
 _mem_set_prot:
     mov     x4, x2
     mov     x2, x1
     mov     x1, x0
-    mov     x16, #-28
-    svc     #0x80
+    adrp    x0, _mem_task_self@PAGE
+    add     x0, x0, _mem_task_self@PAGEOFF
+    ldr     w0, [x0]
 
     mov     x3, xzr
     mov     x16, #-14
     svc     #0x80
     ret
     
+
+_mem_set_rw:
+    mov     w2, (VM_PROT_READ|VM_PROT_WRITE|VM_PROT_COPY)
+    b       _mem_set_prot
+
+
+_mem_set_rx:
+    mov     w2, (VM_PROT_READ|VM_PROT_EXECUTE)
+    b       _mem_set_prot
+
 
 _mem_allocate_internal:
     sub     sp, sp, #0x20
@@ -23,8 +42,9 @@ _mem_allocate_internal:
     mov     x2, x1
     str     x0, [sp]
 
-    mov     x16, #-28
-    svc     #0x80
+    adrp    x0, _mem_task_self@PAGE
+    add     x0, x0, _mem_task_self@PAGEOFF
+    ldr     w0, [x0]
 
     mov     x1, sp
     mov     x16, #-10
@@ -41,11 +61,25 @@ _mem_allocate_internal:
     ret
 
 
+_mem_allocate:
+    mov     x1, x0
+    mov     x0, xzr
+    mov     w2, VM_FLAGS_ANYWHERE
+    b       _mem_allocate_internal
+
+
+_mem_allocate_fixed:
+    mov     w2, VM_FLAGS_FIXED
+    b       _mem_allocate_internal
+
+
+
 _mem_deallocate:
     mov     x2, x1
     mov     x1, x0
-    mov     x16, #-28
-    svc     #0x80
+    adrp    x0, _mem_task_self@PAGE
+    add     x0, x0, _mem_task_self@PAGEOFF
+    ldr     w0, [x0]
 
     mov     x16, #-12
     svc     #0x80
@@ -86,3 +120,6 @@ _mem_clear_cache:
     dsb     sy
     isb     sy
     ret
+
+.section __DATA,__data
+_mem_task_self:     .long 0x0

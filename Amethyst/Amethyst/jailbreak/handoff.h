@@ -5,19 +5,16 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <xpc/xpc.h>
+#include <pthread.h>
 
 typedef enum {
     JBSERVER_CMD_UNKNOWN = 0,
     JBSERVER_CMD_TRUSTCACHE,
     JBSERVER_CMD_SIGN_BINARY,
-    JBSERVER_CMD_PRELOAD_BINARY,
     JBSERVER_CMD_INIT_PROCESS,
     JBSERVER_CMD_PLATFORMIZE,
     JBSERVER_CMD_UNSANDBOX,
-    JBSERVER_CMD_PATCH_SETUID,
-    JBSERVER_CMD_PATCH_SETGID,
-    JBSERVER_CMD_CHECK_FAKESIGNED,
-    JBSERVER_CMD_ADD_FAKESIGNED,
+    JBSERVER_CMD_SET_UID_GID,
     JBSERVER_CMD_HEARTBEAT
 } jbserver_cmd_t;
 
@@ -68,5 +65,6 @@ extern int xpc_pipe_routine_with_flags(xpc_object_t xpc_pipe, xpc_object_t inDic
 int init_launchd_offsets(void);
 int jailbreak_handoff(void);
 int userspace_reboot(void);
+
 
 #endif /* handoff_h */

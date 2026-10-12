@@ -1,4 +1,5 @@
 #!/bin/bash
+rm -rf ./build
 xcodebuild clean build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO -sdk iphoneos -configuration Release
 strip build/Release-iphoneos/Amethyst.app/Amethyst
 ldid -S build/Release-iphoneos/Amethyst.app/Amethyst

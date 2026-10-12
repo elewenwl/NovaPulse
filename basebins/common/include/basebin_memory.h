@@ -45,16 +45,14 @@ void *hash_discriminator(char *str);
 #define hash_discriminator(__unused) ((void *)0)
 #endif
 
+extern mach_port_t mem_task_self;
 int mem_set_prot(void *addr, uint32_t size, vm_prot_t prot);
-void *mem_allocate_internal(void *addr, uint32_t size, uint32_t flags);
 int mem_deallocate(void *addr, uint32_t size);
 void mem_copy(void *dest, void *src, uint32_t size);
 void mem_clear_cache(void *addr, uint32_t size);
 int mem_set_rw(void *addr, uint32_t size);
 int mem_set_rx(void *addr, uint32_t size);
-int mem_set_ro(void *addr, uint32_t size);
 void *mem_allocate(uint32_t size);
 void *mem_allocate_fixed(void *addr, uint32_t size);
-void *mem_allocate_near(void *target, uint64_t range);
 
 #endif /* basebins_memory_h */

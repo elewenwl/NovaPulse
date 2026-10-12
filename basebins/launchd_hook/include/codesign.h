@@ -90,6 +90,7 @@ typedef struct __cs_blob {
 } cs_blob_t;
 
 int sign_binary(char *path, uint32_t le_offset, uint32_t le_size, uint32_t slice_offset, uint32_t file_type);
-int fixup_cs_flags(uint64_t proc);
 
 #endif /* launchd_hook_codesign_h */
+
+

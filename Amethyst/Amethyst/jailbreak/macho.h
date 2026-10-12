@@ -260,8 +260,5 @@ macho_deps_t *macho_resolve_deps(macho_ctx_t *ctx, macho_rpaths_t *rpaths);
 uint8_t *macho_get_cd_hash(const char *path);
 macho_signature_t *macho_get_signature(macho_slice_t *slice);
 void macho_release_signature(macho_signature_t *signature);
-int macho_super_blob_add(macho_super_blob_t *super_blob, uint32_t type, uint8_t *data, uint32_t size);
-int macho_super_blob_build(macho_super_blob_t *super_blob, uint8_t **out_data, uint32_t *out_size);
-int macho_sign_binary(macho_slice_t *slice, char *ident, uint8_t **out_data, uint32_t *out_size, uint8_t *cd_hash);
 
 #endif /* macho_h */

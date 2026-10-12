@@ -4,26 +4,13 @@
 #include "ppl.h"
 #include "util.h"
 
-extern int IOMobileFramebufferGetMainDisplay(void**);
-extern int IOMobileFramebufferGetLayerDefaultSurface(void*, int, void **);
-extern int IOMobileFramebufferGetDisplaySize(void *pointer, CGSize *size);
-extern void *IOSurfaceCreate(CFDictionaryRef properties);
-extern int IOSurfaceLock(void *buffer, uint32_t options, uint32_t *seed);
-extern int IOSurfaceUnlock(void *buffer, uint32_t options, uint32_t *seed);
-extern int IOMobileFramebufferSwapBegin(void *, int *);
-extern int IOMobileFramebufferSwapSetLayer(void *, int, void *, CGRect, CGRect, int);
-extern int IOMobileFramebufferSwapEnd(void *);
-extern void *IOSurfaceGetBaseAddress(void *buffer);
-extern size_t IOSurfaceGetBytesPerRow(void *buffer);
-extern size_t IOSurfaceAlignProperty(CFStringRef property, size_t value);
-extern const CFStringRef kIOSurfaceBytesPerRow;
-
 static pthread_mutex_t process_lock = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t pidhashtbl = 0;
+static uint32_t pidhash = 0;
 static pid_t self_pid = -1;
-static bool io_init_done = false;
 
 int get_process_info(pid_t pid, uint64_t *proc_addr, uint64_t *task_addr) {
-    if (pid < 0 || pid > 0xfffff) return -1;
+    if (pid < PID_MIN || pid > PID_MAX) return -1;
     if (self_pid == -1) self_pid = getpid();
 
     if (pid == self_pid) {
@@ -41,26 +28,49 @@ int get_process_info(pid_t pid, uint64_t *proc_addr, uint64_t *task_addr) {
         return -1;
     }
 
-    pthread_mutex_lock(&process_lock);
-    uint64_t current_task = kinfo->kern_task_addr;
-    uint64_t current_proc = 0;
-    pid_t current_pid = -1;
-    uint32_t search_count = 0;
+    if (pidhashtbl == 0 && kinfo->patches.pidhashtbl_ptr != 0) {
+        pidhashtbl = kread64(kinfo->patches.pidhashtbl_ptr);
+        pidhash = kread32(kinfo->patches.pidhash_ptr);
+    }
 
-    while (current_task != 0) {
-        current_proc = kread64(current_task + koffsetof(task, bsd_info));
-        if (KADDR_VALID(current_proc)) {
-            current_pid = kread32(current_proc + koffsetof(proc, pid));
-            if (current_pid == pid) {
+    pthread_mutex_lock(&process_lock);
+    uint64_t offset = ((uint32_t)pid & pidhash) * 0x8;
+    uint64_t current_proc = kread64(pidhashtbl + offset);
+    bool use_fallback = true;
+    
+    if (pidhashtbl != 0) {
+        while (current_proc != 0) {
+            if (kread32(current_proc + koffsetof(proc, pid)) == pid) {
                 *proc_addr = current_proc;
-                *task_addr = current_task;
+                *task_addr = kread64(current_proc + koffsetof(proc, task));
+                use_fallback = false;
                 break;
             }
+            current_proc = kread64(current_proc + 0xa0);
         }
+    }
 
-        current_task = kread64(current_task + koffsetof(task, next));
-        if (!KADDR_VALID(current_task) || current_task == kinfo->kern_task_addr) break;
-        if (++search_count >= 500) break;
+    if (use_fallback) {
+        uint64_t current_task = kinfo->kern_task_addr;
+        current_proc = 0;
+        pid_t current_pid = -1;
+        uint32_t search_count = 0;
+
+        while (current_task != 0) {
+            current_proc = kread64(current_task + koffsetof(task, bsd_info));
+            if (KADDR_VALID(current_proc)) {
+                current_pid = kread32(current_proc + koffsetof(proc, pid));
+                if (current_pid == pid) {
+                    *proc_addr = current_proc;
+                    *task_addr = current_task;
+                    break;
+                }
+            }
+
+            current_task = kread64(current_task + koffsetof(task, next));
+            if (!KADDR_VALID(current_task) || current_task == kinfo->kern_task_addr) break;
+            if (++search_count >= 1024) break;
+        }
     }
 
     pthread_mutex_unlock(&process_lock);
@@ -128,23 +138,6 @@ uint64_t find_ipc_port(mach_port_t port) {
     return port_addr;
 }
 
-uint64_t get_mac_slot(pid_t pid, uint64_t proc, int slot) {
-    if (proc == 0) {
-        uint64_t task = 0;
-        if (get_process_info(pid, &proc, &task) != 0) return 0;
-    }
-
-    uint64_t ucred = kread64(proc + koffsetof(proc, ucred));
-    if (!KADDR_VALID(ucred)) return 0;
-
-    uint64_t cr_label = kread64(ucred + koffsetof(ucred, cr_label));
-    if (!KADDR_VALID(cr_label)) return 0;
-
-    uint64_t slot_addr = kread64(cr_label + koffsetof(label, slots) + (slot*0x8));
-    if (!KADDR_VALID(slot_addr)) return 0;
-    return slot_addr;
-}
-
 void set_mac_slot(pid_t pid, uint64_t proc, int slot, uint64_t value) {
     if (proc == 0) {
         uint64_t task = 0;
@@ -160,22 +153,6 @@ void set_mac_slot(pid_t pid, uint64_t proc, int slot, uint64_t value) {
     kwrite64(cr_label + koffsetof(label, slots) + (slot*0x8), value);
 }
 
-uint32_t get_task_flags(pid_t pid, uint64_t task) {
-    if (task == 0) {
-        uint64_t proc = 0;
-        if (get_process_info(pid, &proc, &task) != 0) return 0;
-    }
-    return kread32(task + koffsetof(task, t_flags));
-}
-
-void set_task_flags(pid_t pid, uint64_t task, int flags) {
-    if (task == 0) {
-        uint64_t proc = 0;
-        if (get_process_info(pid, &proc, &task) != 0) return;
-    }
-    kwrite32(task + koffsetof(task, t_flags), flags);
-}
-
 void add_task_flag(pid_t pid, uint64_t task, int flag) {
     if (task == 0) {
         uint64_t proc = 0;
@@ -184,32 +161,6 @@ void add_task_flag(pid_t pid, uint64_t task, int flag) {
 
     uint32_t t_flags = kread32(task + koffsetof(task, t_flags));
     kwrite32(task + koffsetof(task, t_flags), t_flags | flag);
-}
-
-void remove_task_flag(pid_t pid, uint64_t task, int flag) {
-    if (task == 0) {
-        uint64_t proc = 0;
-        if (get_process_info(pid, &proc, &task) != 0) return;
-    }
-
-    uint32_t t_flags = kread32(task + koffsetof(task, t_flags));
-    kwrite32(task + koffsetof(task, t_flags), t_flags & ~flag);
-}
-
-uint32_t get_cs_flags(pid_t pid, uint64_t proc) {
-    if (proc == 0) {
-        uint64_t task = 0;
-        if (get_process_info(pid, &proc, &task) != 0) return 0;
-    }
-    return kread32(proc + koffsetof(proc, csflags));
-}
-
-void set_cs_flags(pid_t pid, uint64_t proc, int flags) {
-    if (proc == 0) {
-        uint64_t task = 0;
-        if (get_process_info(pid, &proc, &task) != 0) return;
-    }
-    kwrite32(proc + koffsetof(proc, csflags), flags);
 }
 
 void add_cs_flag(pid_t pid, uint64_t proc, int flag) {
@@ -269,6 +220,58 @@ uint64_t proc_get_pmap_cs_entry(uint64_t proc) {
 #else
     return 0;
 #endif
+}
+
+soc_type_t get_soc_type(void) {
+    uint32_t cpu_family = 0;
+    size_t cpu_family_size = sizeof(cpu_family);
+    sysctlbyname("hw.cpufamily", &cpu_family, &cpu_family_size, NULL, 0);
+
+    char board[64] = {0};
+    size_t board_size = sizeof(board);
+    sysctlbyname("hw.targettype", &board[0], &board_size, NULL, 0);
+    
+    switch (cpu_family) {
+        case CPUFAMILY_ARM_CYCLONE: {
+            return SOC_A7;
+        } break;
+            
+        case CPUFAMILY_ARM_TYPHOON: {
+            if (strcasecmp(board, "J81AP") == 0 || strcasecmp(board, "J82AP") == 0) return SOC_A8X;
+            return SOC_A8;
+        } break;
+            
+        case CPUFAMILY_ARM_TWISTER: {
+            if (strcasecmp(board, "J98aAP") == 0 || strcasecmp(board, "J99aAP") == 0 ||
+                strcasecmp(board, "J127AP") == 0 || strcasecmp(board, "J128AP") == 0) return SOC_A9X;
+            return SOC_A9;
+        } break;
+            
+        case CPUFAMILY_ARM_HURRICANE: {
+            if (strcasecmp(board, "J207AP") == 0 || strcasecmp(board, "J208AP") == 0 ||
+                strcasecmp(board, "J120AP") == 0 || strcasecmp(board, "J121AP") == 0) return SOC_A10X;
+            return SOC_A10;
+        } break;
+        
+        case CPUFAMILY_ARM_MONSOON_MISTRAL: {
+            return SOC_A11;
+        } break;
+            
+        case CPUFAMILY_ARM_VORTEX_TEMPEST: {
+            if (strcasecmp(board, "J317AP") == 0 || strcasecmp(board, "J317xAP") == 0 ||
+                strcasecmp(board, "J318AP") == 0 || strcasecmp(board, "J318xAP") == 0 ||
+                strcasecmp(board, "J320AP") == 0 || strcasecmp(board, "J320xAP") == 0 ||
+                strcasecmp(board, "J321AP") == 0 || strcasecmp(board, "J321xAP") == 0) return SOC_A12X;
+            if (strcasecmp(board, "J417AP") == 0 || strcasecmp(board, "J418AP") == 0 ||
+                strcasecmp(board, "J420AP") == 0 || strcasecmp(board, "J421AP") == 0) return SOC_A12Z;
+            return SOC_A12;
+        } break;
+            
+        case CPUFAMILY_ARM_LIGHTNING_THUNDER: {
+            return SOC_A13;
+        } break;
+        default: return SOC_UNKNOWN;
+    }
 }
 
 int draw_splash_screen(void) {
@@ -333,10 +336,8 @@ int draw_splash_screen(void) {
     if ((surface = IOSurfaceCreate(dict)) == NULL) goto done;
     IOSurfaceLock(surface, 0, 0);
 
-  //  if (kinfo->first_run == 1) {
-        pid_t backboardd_pid = find_pid_for_name("backboardd");
-        if (backboardd_pid != -1) kill(backboardd_pid, SIGTERM);
-  //  }
+    pid_t backboardd_pid = find_pid_for_name("backboardd");
+    if (backboardd_pid != -1) kill(backboardd_pid, SIGTERM);
 
     if (IOMobileFramebufferSwapBegin(display, &token) != 0) goto done;
     if (IOMobileFramebufferSwapSetLayer(display, 0, surface, frame, frame, 0) != 0) goto done;
@@ -389,24 +390,24 @@ int update_jailbreak(void) {
         return 0;
     }
 
-    remove("/amethyst/jbutil");
+    //remove("/amethyst/jbutil");
     remove("/usr/lib/base_hook.dylib");
     remove("/usr/lib/libjailbreak.dylib");
     sync();
 
-    rename("/amethyst/update/jbutil", "/amethyst/jbutil");
+    //rename("/amethyst/update/jbutil", "/amethyst/jbutil");
     rename("/amethyst/update/base_hook.dylib", "/usr/lib/base_hook.dylib");
     rename("/amethyst/update/libjailbreak.dylib", "/usr/lib/libjailbreak.dylib");
 
-    chown("/amethyst/jbutil", 0, 0);
-    chmod("/amethyst/jbutil", 0755);
+   // chown("/amethyst/jbutil", 0, 0);
+    //chmod("/amethyst/jbutil", 0755);
     chown("/usr/lib/base_hook.dylib", 0, 0);
     chmod("/usr/lib/base_hook.dylib", 0755);
     chown("/usr/lib/libjailbreak.dylib", 0, 0);
     chmod("/usr/lib/libjailbreak.dylib", 0755);
 
     trustcache_lock_add_binary("/amethyst/launchd_hook.dylib");
-    trustcache_lock_add_binary("/amethyst/jbutil");
+   // trustcache_lock_add_binary("/amethyst/jbutil");
     trustcache_lock_add_binary("/usr/lib/base_hook.dylib");
     trustcache_lock_add_binary("/usr/lib/libjailbreak.dylib");
 

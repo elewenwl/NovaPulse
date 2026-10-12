@@ -139,6 +139,24 @@
 - (void)toggleLightMode;
 @end
 
+@interface LoadingAlert: NSObject
+@property (nonatomic, strong) UIView *alertView;
+@property (nonatomic, strong) UIView *alertOverlay;
+@property (nonatomic, strong) UILabel *alertTitle;
+@property (nonatomic, strong) UIView *separator;
+@property (nonatomic, strong) UIActivityIndicatorView *indicator;
+@property (nonatomic, strong) UIVisualEffectView *lightBlur;
+@property (nonatomic, strong) UIVisualEffectView *darkBlur;
+@property (nonatomic, assign) BOOL loadingDone;
+
+- (id)init:(NSString *)title;
+- (void)setOverlay:(UIView *)view;
+- (void)openAlert;
+- (void)closeAlert;
+- (BOOL)isOpen;
+- (void)toggleLightMode;
+@end
+
 
 
 @interface ProgressRing : UIView

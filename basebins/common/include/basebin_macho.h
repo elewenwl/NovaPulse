@@ -152,6 +152,14 @@ typedef struct {
 } macho_ctx_t;
 
 typedef struct {
+    cpu_type_t	cpu_type;
+    cpu_subtype_t cpu_subtype;
+    uint32_t offset;
+    uint32_t size;
+    uint32_t alignment;
+} macho_arch_t;
+
+typedef struct {
     uint32_t max;
     uint32_t count;
     uint32_t resolved;
@@ -180,7 +188,6 @@ typedef struct {
     uint8_t hash[20];
     uint8_t hash_type;
     bool is_adhoc;
-    bool is_fakesigned;
     uint32_t version;
     CS_CodeDirectory *code_dir;
     uint32_t offset;
@@ -201,15 +208,10 @@ static char *default_lib_paths[] = {
 
 void macho_release(macho_ctx_t *ctx);
 macho_ctx_t *macho_load(const char *path);
-void macho_release_rpaths(macho_rpaths_t *rpaths);
-macho_rpaths_t *macho_resolve_rpaths(macho_ctx_t *ctx);
-void macho_release_deps(macho_deps_t *deps);
-bool macho_uses_external_libswift(macho_deps_t *deps);
-macho_deps_t *macho_resolve_deps(macho_ctx_t *ctx, macho_rpaths_t *rpaths);
 macho_signature_t *macho_get_signature(macho_slice_t *slice);
 void macho_release_signature(macho_signature_t *signature);
 macho_slice_t *macho_get_best_slice(macho_ctx_t *ctx);
 int macho_sign_binary(macho_slice_t *slice, char *ident, uint8_t **out_data, uint32_t *out_size, uint8_t *cd_hash);
-bool macho_should_process(macho_ctx_t *ctx);
+bool macho_should_sign(macho_ctx_t *ctx, macho_signature_t *signature);
 
 #endif /* basebins_macho_h */

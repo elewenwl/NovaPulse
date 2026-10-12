@@ -4,10 +4,8 @@
 #include "info.h"
 #include "codesign.h"
 
-#define SANDBOX_READ "com.apple.app-sandbox.read"
-#define SANDBOX_READ_WRITE "com.apple.app-sandbox.read-write"
-#define SANDBOX_EXECUTABLE "com.apple.sandbox.executable"
-#define SANDBOX_MACH "com.apple.app-sandbox.mach"
+#define JBSERVER_MSG_ID     0x40000206
+#define JBSERVER_MSG_MAGIC  0x48415858
 #define P_SUGID 0x00000100
 
 #define get_audit_token_pid(token) ((pid_t)(token.val[5]))
@@ -15,29 +13,44 @@
 #define get_audit_token_ruid(token) ((uid_t)(token.val[3]))
 #define get_audit_token_gid(token) ((gid_t)(token.val[2]))
 #define get_audit_token_rgid(token) ((gid_t)(token.val[4]))
-
-typedef struct {
-    const char *cls;
-    const char *value;
-} sandbox_ext_t;
+#define get_audit_token_idversion(token) ((gid_t)(token.val[7]))
 
 typedef struct {
     const char *name;
     uint32_t len;
 } lookup_info_t;
 
+typedef struct {
+	mach_msg_header_t hdr;
+    uint32_t magic;
+    pid_t pid;
+    uint32_t cmd;
+} jbserver_base_msg_t;
+
+typedef struct {
+    jbserver_base_msg_t base;
+    uint32_t type;
+    uint8_t hash[20];
+} jbserver_trustcache_msg_t;
+
+typedef struct {
+    jbserver_base_msg_t base;
+} jbserver_init_process_msg_t;
+
+typedef struct {
+	mach_msg_header_t hdr;
+    uint32_t error;
+    mach_msg_trailer_t trailer;
+} jbserver_reply_msg_t;
+
 typedef enum {
     JBSERVER_CMD_UNKNOWN = 0,
     JBSERVER_CMD_TRUSTCACHE,
     JBSERVER_CMD_SIGN_BINARY,
-    JBSERVER_CMD_PRELOAD_BINARY,
     JBSERVER_CMD_INIT_PROCESS,
     JBSERVER_CMD_PLATFORMIZE,
     JBSERVER_CMD_UNSANDBOX,
-    JBSERVER_CMD_PATCH_SETUID,
-    JBSERVER_CMD_PATCH_SETGID,
-    JBSERVER_CMD_CHECK_FAKESIGNED,
-    JBSERVER_CMD_ADD_FAKESIGNED,
+    JBSERVER_CMD_SET_UID_GID,
     JBSERVER_CMD_HEARTBEAT
 } jbserver_cmd_t;
 
@@ -54,22 +67,8 @@ typedef enum {
     JBSERVER_ERR_UNKNOWN_FAILURE
 } jbserver_err_t;
 
-typedef enum {
-    JBSERVER_UNSANDBOX_FULL = 0,
-    JBSERVER_UNSANDBOX_EXTENSIONS,
-    JBSERVER_UNSANDBOX_NONE
-} jbserver_unsandbox_t;
-
-extern char *sandbox_extension_issue_mach_to_process_by_pid(const char *extension_class, const char *name, uint32_t flags, pid_t);
-extern char *sandbox_extension_issue_file(const char *extension_class, const char *path, uint32_t flags);
-extern char *sandbox_extension_issue_file_to_process_by_pid(const char *extension_class, const char *path, uint32_t flags, pid_t);
-extern char *sandbox_extension_issue_file_to_process(const char *extension_class, const char *path, uint32_t flags, audit_token_t);
-extern void xpc_dictionary_get_audit_token(xpc_object_t xdict, audit_token_t *token);
-
-extern xpc_object_t _xpc_serializer_unpack(void *a1, void *a2, void *a3);
-extern int xpc_receive_mach_msg(void *msg, void *a2, void *a3, void *a4, xpc_object_t *output);
+extern mach_msg_header_t *dispatch_mach_msg_get_msg(void *, size_t *);
 extern int xpc_pipe_routine_reply(xpc_object_t reply);
-extern char *xpc_strerror(int err);
 
 int init_server(void);
 

@@ -40,7 +40,7 @@ static tt_level_t arm_tt_level[4] = {
 };
 
 void kread_buf(uint64_t addr, void *data, uint32_t size) {
-    if (addr == 0 || data == NULL || size == 0) return;
+    if (!KADDR_VALID(addr) || data == NULL || size == 0) return;
     uint32_t offset = 0;
     
     while (offset < size) {
@@ -55,7 +55,7 @@ void kread_buf(uint64_t addr, void *data, uint32_t size) {
 }
 
 void kwrite_buf(uint64_t addr, void *data, uint32_t size) {
-    if (addr == 0 || data == NULL || size == 0) return;
+    if (!KADDR_VALID(addr) || data == NULL || size == 0) return;
     uint32_t offset = 0;
     
     while (offset < size) {
@@ -120,7 +120,7 @@ uint64_t kalloc_wired(uint32_t size) {
     
     uint64_t addr = 0;
     mach_vm_allocate(kinfo->tfp0, &addr, size, VM_FLAGS_ANYWHERE|VM_FLAGS_NO_CACHE);
-    if (addr == 0) return 0;
+    if (!KADDR_VALID(addr)) return 0;
     
     if (mach_vm_wire(mach_host_self(), kinfo->tfp0, addr, size, VM_PROT_READ|VM_PROT_WRITE) != 0) {
         kzero(addr, size);
@@ -129,12 +129,12 @@ uint64_t kalloc_wired(uint32_t size) {
 }
 
 void kfree(uint64_t addr, uint32_t size) {
-    if (addr == 0 || size == 0) return;
+    if (!KADDR_VALID(addr) || size == 0) return;
     mach_vm_deallocate(kinfo->tfp0, addr, size);
 }
 
 void kzero(uint64_t addr, uint32_t size) {
-    if (addr == 0 || size == 0) return;
+    if (!KADDR_VALID(addr) || size == 0) return;
     void *data = calloc(1, size);
     if (data == NULL) return;
 
@@ -157,6 +157,7 @@ uint64_t phystokv(uint64_t pa) {
 }
 
 static uint64_t ttep_vtophys(uint64_t ttep, uint64_t va) {
+    if (va == 0 || ttep == 0) return 0;
     for (uint64_t level = PMAP_TT_L1_LEVEL; level <= PMAP_TT_L3_LEVEL; level++) {
         if (level > PMAP_TT_L3_LEVEL || ttep == 0) return 0;
         tt_level_t *level_info = &arm_tt_level[level];
@@ -164,7 +165,7 @@ static uint64_t ttep_vtophys(uint64_t ttep, uint64_t va) {
         uint64_t tte_index = (va & level_info->index_mask) >> level_info->shift;
         uint64_t tte_pa = ttep + (tte_index * 0x8);
         uint64_t tte_va = phystokv(tte_pa);
-        if (tte_va == 0) return 0;
+        if (!KADDR_VALID(tte_va)) return 0;
 
         uint64_t tte_entry = kread64(tte_va);
         if ((tte_entry & level_info->valid_mask) != level_info->valid_mask) return 0;
@@ -176,8 +177,31 @@ static uint64_t ttep_vtophys(uint64_t ttep, uint64_t va) {
     return ttep;
 }
 
+uint64_t get_va_pte(uint64_t va) {
+    uint64_t ttep = kinfo->self_ttep;
+    uint64_t tte_pa = 0;
+
+    for (uint64_t level = PMAP_TT_L1_LEVEL; level <= PMAP_TT_L3_LEVEL; level++) {
+        if (level > PMAP_TT_L3_LEVEL || ttep == 0) return 0;
+        tt_level_t *level_info = &arm_tt_level[level];
+
+        uint64_t tte_index = (va & level_info->index_mask) >> level_info->shift;
+        tte_pa = ttep + (tte_index * 0x8);
+        uint64_t tte_va = phystokv(tte_pa);
+        if (tte_va == 0) return 0;
+
+        uint64_t tte_entry = kread64(tte_va);
+        if ((tte_entry & level_info->valid_mask) != level_info->valid_mask) return 0;
+        if ((tte_entry & level_info->type_mask) == level_info->type_block) {
+            return tte_pa;
+        }
+        ttep = tte_entry & ARM_TTE_TABLE_MASK;
+    }
+    return tte_pa;
+}
+
 uint64_t kvtophys(uint64_t va) {
-    if (kinfo->cpu_ttep == 0 || va < kinfo->patches.gVirtBase) return 0;
+    if (kinfo->cpu_ttep == 0 || !KADDR_VALID(va) || va < kinfo->patches.gVirtBase) return 0;
     return ttep_vtophys(kinfo->cpu_ttep, va);
 }
 

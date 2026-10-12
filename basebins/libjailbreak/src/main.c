@@ -86,7 +86,7 @@ static xpc_object_t jbserver_init_msg(jbserver_cmd_t cmd) {
     return request;
 }
 
-static jbserver_err_t jbserver_platformize(pid_t pid) {
+jbserver_err_t jbserver_platformize(pid_t pid) {
     xpc_object_t request = jbserver_init_msg(JBSERVER_CMD_PLATFORMIZE);
     if (pid != getpid()) xpc_dictionary_set_int64(request, "pid", (int64_t)pid);
 
@@ -95,28 +95,21 @@ static jbserver_err_t jbserver_platformize(pid_t pid) {
     return err;
 }
 
-static jbserver_err_t jbserver_unsandbox(pid_t pid, jbserver_unsandbox_t unsandbox_type) {
+jbserver_err_t jbserver_unsandbox(pid_t pid) {
     xpc_object_t request = jbserver_init_msg(JBSERVER_CMD_UNSANDBOX);
     if (pid != getpid()) xpc_dictionary_set_int64(request, "pid", (int64_t)pid);
-    xpc_dictionary_set_uint64(request, "unsandbox_type", unsandbox_type);
 
     jbserver_err_t err = jbserver_send_msg(request);
     xpc_release(request);
     return err;
 }
 
-static jbserver_err_t jbserver_patch_setuid(pid_t pid) {
-    xpc_object_t request = jbserver_init_msg(JBSERVER_CMD_PATCH_SETUID);
+jbserver_err_t jbserver_set_uid_gid(pid_t pid, uid_t uid, gid_t gid) {
+    xpc_object_t request = jbserver_init_msg(JBSERVER_CMD_SET_UID_GID);
     if (pid != getpid()) xpc_dictionary_set_int64(request, "pid", (int64_t)pid);
-
-    jbserver_err_t err = jbserver_send_msg(request);
-    xpc_release(request);
-    return err;
-}
-
-static jbserver_err_t jbserver_patch_setgid(pid_t pid) {
-    xpc_object_t request = jbserver_init_msg(JBSERVER_CMD_PATCH_SETGID);
-    if (pid != getpid()) xpc_dictionary_set_int64(request, "pid", (int64_t)pid);
+    if (uid != -1) xpc_dictionary_set_int64(request, "uid", (int64_t)uid);
+    if (gid != -1) xpc_dictionary_set_int64(request, "gid", (int64_t)gid);
+    xpc_dictionary_set_bool(request, "legacy", true);
 
     jbserver_err_t err = jbserver_send_msg(request);
     xpc_release(request);
@@ -124,38 +117,35 @@ static jbserver_err_t jbserver_patch_setgid(pid_t pid) {
 }
 
 BASEBIN_EXPORT void jb_oneshot_fix_setuid_now(pid_t pid) {
-    if (getuid() != 0) jbserver_patch_setuid(pid);
-    if (getgid() != 0) jbserver_patch_setgid(pid);
+    if (getuid() != 0 || getgid() != 0) jbserver_set_uid_gid(pid, 0, 0);
 }
 
 BASEBIN_EXPORT void jb_fix_setuid_now(jb_connection_t connection, pid_t pid) {
-    if (getuid() != 0) jbserver_patch_setuid(pid);
-    if (getgid() != 0) jbserver_patch_setgid(pid);
+    if (getuid() != 0 || getgid() != 0) jbserver_set_uid_gid(pid, 0, 0);
 }
 
 BASEBIN_EXPORT void jb_fix_setuid(jb_connection_t connection, pid_t pid, jb_callback_t done) {
-    if (getuid() != 0) jbserver_patch_setuid(pid);
-    if (getgid() != 0) jbserver_patch_setgid(pid);
+    if (getuid() != 0 || getgid() != 0) jbserver_set_uid_gid(pid, 0, 0);
     if (done != NULL) done(1);
 }
 
 BASEBIN_EXPORT void jb_oneshot_entitle_now(pid_t pid, uint32_t flags) {
     if (flags == 0 || (flags & FLAG_PLATFORMIZE)) jbserver_platformize(pid);
-    if (flags == 0 || flags & FLAG_SANDBOX) jbserver_unsandbox(getpid(), JBSERVER_UNSANDBOX_FULL);
+    if (flags == 0 || flags & FLAG_SANDBOX) jbserver_unsandbox(getpid());
     if ((flags & FLAG_WAIT_EXEC) || (flags & FLAG_DELAY)) usleep(500000);
     if (flags & FLAG_SIGCONT) kill(pid, SIGCONT);
 }
 
 BASEBIN_EXPORT void jb_entitle_now(jb_connection_t connection, pid_t pid, uint32_t flags) {
     if (flags == 0 || (flags & FLAG_PLATFORMIZE)) jbserver_platformize(pid);
-    if (flags == 0 || flags & FLAG_SANDBOX) jbserver_unsandbox(getpid(), JBSERVER_UNSANDBOX_FULL);
+    if (flags == 0 || flags & FLAG_SANDBOX) jbserver_unsandbox(getpid());
     if ((flags & FLAG_WAIT_EXEC) || (flags & FLAG_DELAY)) usleep(500000);
     if (flags & FLAG_SIGCONT) kill(pid, SIGCONT);
 }
 
 BASEBIN_EXPORT void jb_entitle(jb_connection_t connection, pid_t pid, uint32_t flags, jb_callback_t done) {
     if (flags == 0 || (flags & FLAG_PLATFORMIZE)) jbserver_platformize(pid);
-    if (flags == 0 || flags & FLAG_SANDBOX) jbserver_unsandbox(getpid(), JBSERVER_UNSANDBOX_FULL);
+    if (flags == 0 || flags & FLAG_SANDBOX) jbserver_unsandbox(getpid());
     if ((flags & FLAG_WAIT_EXEC) || (flags & FLAG_DELAY)) usleep(500000);
     if (flags & FLAG_SIGCONT) kill(pid, SIGCONT);
     if (done != NULL) done(1);

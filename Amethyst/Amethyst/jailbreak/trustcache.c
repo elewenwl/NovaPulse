@@ -338,6 +338,7 @@ int trustcache_add_binary(const char *path) {
     macho_release(macho);
     if (deps == NULL) return -1;
     
+    int added = 0;
     for (uint32_t i = 0; i < deps->count; i++) {
         macho_ctx_t *current_macho = macho_load(deps->list[i]);
         if (current_macho == NULL) continue;
@@ -348,6 +349,7 @@ int trustcache_add_binary(const char *path) {
             
             if (!trustcache_check(signature->hash)) {
                 trustcache_add_hash(signature->hash, signature->hash_type);
+                added++;
             }
             macho_release_signature(signature);
         }

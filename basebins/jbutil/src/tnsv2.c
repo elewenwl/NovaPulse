@@ -1,6 +1,7 @@
 #include "injector.h"
 #include "process.h"
 #include "util.h"
+#include "dyld.h"
 #include "tnsv2.h"
 
 static uint64_t kernel_base = 0;
@@ -14,6 +15,8 @@ static uint64_t self_task_addr = 0;
 static uint64_t all_proc = 0;
 static uint64_t static_trustcache = 0;
 static uint64_t dynamic_trustcache = 0;
+static uint64_t pidhash_ptr = 0;
+static uint64_t pidhashtbl_ptr = 0;
 static mach_port_t tfp0 = MACH_PORT_NULL;
 
 static void kread_buf(uint64_t addr, void *data, uint32_t size) {
@@ -84,31 +87,6 @@ static void kwrite64(uint64_t addr, uint64_t value) {
     kwrite_buf(addr, &value, 8);
 }
 
-static void *map_file(const char *path, uint32_t *size, bool write) {
-    if (path == NULL || size == NULL) return NULL;
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) return NULL;
-
-    struct stat st = {0};
-    if (fstat(fd, &st) != 0 || st.st_size <= 0) {
-        close(fd);
-        return NULL;
-    }
-
-    uint32_t prot = PROT_READ | (write ? PROT_WRITE : PROT_NONE);
-    void *data = mmap(NULL, st.st_size, prot, MAP_PRIVATE, fd, 0);
-    close(fd);
-
-    if (data == MAP_FAILED) return NULL;
-    *size = (uint32_t)st.st_size;
-    return data;
-}
-
-static void unmap_file(void *data, uint32_t size) {
-    if (data == NULL || size == 0) return;
-    munmap(data, size);
-}
-
 static xpc_object_t xpc_open_plist(const char *path) {
     uint32_t file_size = 0;
     uint8_t *file_data = map_file(path, &file_size, false);
@@ -143,35 +121,6 @@ static uint64_t dict_get_u64(xpc_object_t dict, const char *key) {
     return 0;
 }
 
-static int copy_file(const char *src, const char *dest) {
-    int fd = open(src, O_RDONLY);
-    if (fd == -1) return -1;
-    
-    if (access(dest, R_OK) == 0) {
-        unlink(dest);
-        sync();
-    }
-    
-    size_t size = lseek(fd, 0, SEEK_END);
-    lseek(fd, 0, SEEK_SET);
-    void *data = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-    close(fd);
-    if (data == MAP_FAILED) return -1;
-    
-    FILE *output = fopen(dest, "wb");
-    if (output == NULL) {
-        munmap(data, size);
-        return -1;
-    }
-
-    fwrite(data, size, 1, output);
-    munmap(data, size);
-    fclose(output);
-    sync();
-    return access(dest, F_OK);
-}
-
-
 static void add_plist_entry(CFMutableDictionaryRef plist, CFStringRef key, uint64_t value) {
     CFStringRef value_str = CFStringCreateWithFormat(kCFAllocatorDefault, NULL, CFSTR("0x%llx"), value);
     CFDictionaryAddValue(plist, key, value_str);
@@ -187,18 +136,14 @@ static int init_handoff_plist(void) {
     if ((plist = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, NULL, NULL)) == NULL) goto done;
     unlink("/amethyst/handoff.plist");
 
-    uint32_t cpu_family = 0;
-    size_t size = sizeof(cpu_family);
-    sysctlbyname("hw.cpufamily", &cpu_family, &size, NULL, 0);
-    uint32_t page_size = (cpu_family == CPUFAMILY_ARM_CYCLONE || cpu_family == CPUFAMILY_ARM_TYPHOON) ? 0x1000 : 0x4000;
-
     add_plist_entry(plist, CFSTR("kern_proc_addr"), kern_proc_addr);
     add_plist_entry(plist, CFSTR("kern_task_addr"), kern_task_addr);
     add_plist_entry(plist, CFSTR("kernel_base"), kernel_base);
     add_plist_entry(plist, CFSTR("kernel_slide"), kernel_slide);
     add_plist_entry(plist, CFSTR("static_trustcache"), static_trustcache);
     add_plist_entry(plist, CFSTR("dynamic_trustcache"), dynamic_trustcache);
-    add_plist_entry(plist, CFSTR("page_size"), page_size);
+    if (pidhash_ptr != 0) add_plist_entry(plist, CFSTR("pidhash_ptr"), pidhash_ptr);
+    if (pidhashtbl_ptr != 0) add_plist_entry(plist, CFSTR("pidhashtbl_ptr"), pidhashtbl_ptr);
     add_plist_entry(plist, CFSTR("tnsv2"), 0x4141);
 
     if ((url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, CFSTR("/amethyst/handoff.plist"), 0, 0)) == NULL) goto done;
@@ -333,6 +278,13 @@ int tnsv2_startup(void) {
         static_trustcache = kernel_base - diff;
     }
 
+    uint64_t old_pidhash_ptr = dict_get_u64(amethyst_plist, "pidhash_ptr");
+    uint64_t old_pidhashtbl_ptr = dict_get_u64(amethyst_plist, "pidhashtbl_ptr");
+    if (old_pidhash_ptr != 0 && old_pidhashtbl_ptr != 0) {
+        pidhash_ptr = kernel_base + (old_pidhash_ptr - old_kernel_base);
+        pidhashtbl_ptr = kernel_base + (old_pidhashtbl_ptr - old_kernel_base);
+    }
+
     kern_proc_addr = find_proc_for_pid(0);
     kern_task_addr = kread64(kern_proc_addr + 0x10);
     launchd_proc_addr = find_proc_for_pid(1);
@@ -357,12 +309,7 @@ int tnsv2_startup(void) {
     cs_flags &= ~(CS_FORCED_LV|CS_HARD|CS_KILL|CS_RESTRICT|CS_ENFORCEMENT|CS_REQUIRE_LV);
     kwrite32(launchd_proc_addr + 0x290, cs_flags);
 
-    if (access("/usr/lib/dyld_patch", F_OK) != 0) {
-        if (access("/amethyst/dyld_patch", F_OK) == 0) {
-            copy_file("/amethyst/dyld_patch", "/usr/lib/dyld_patch");
-        }
-    }
-
+    if (patch_dyld() != 0) goto done;
     if (access("/usr/lib/dyld_patch", F_OK) == 0) {
         swap_namecache_vnode("/usr/lib/dyld_patch", "/usr/lib/dyld");
         chmod("/usr/lib/dyld_patch", 0755);

@@ -1,4 +1,7 @@
+#include "process.h"
 #include "util.h"
+
+static uint32_t is_arm64e = -1;
 
 int run_command(const char *path, char **args) {
     char *env[] = {
@@ -221,4 +224,128 @@ int refresh_icon_cache(void) {
     SEL sel = sel_getUid("_LSPrivateRebuildApplicationDatabasesForSystemApps:internal:user:");
     bool status = ((bool (*)(id, SEL, bool, bool, bool))objc_msgSend)(workspace, sel, 1, 1, 0);
     return status ? 0 : -1;
+}
+
+int respring_device(void) {
+    pid_t springboard_pid = process_get_pid("SpringBoard");
+    pid_t backboardd_pid = process_get_pid("backboardd");
+
+    int status = process_send_signal(springboard_pid, SIGTERM);
+    if (status != 0) status = process_send_signal(backboardd_pid, SIGTERM);
+    return status;
+}
+
+bool soc_is_arm64e(void) {
+    if (is_arm64e == -1) {
+#ifdef __arm64e__
+        is_arm64e = 1;
+        return true;
+#endif
+        uint32_t cpu_family = 0;
+        size_t size = sizeof(cpu_family);
+        sysctlbyname("hw.cpufamily", &cpu_family, &size, NULL, 0);
+    
+        if (cpu_family == CPUFAMILY_ARM_VORTEX_TEMPEST || cpu_family == CPUFAMILY_ARM_LIGHTNING_THUNDER) {
+            is_arm64e = 1;
+        } else {
+            is_arm64e = 0;
+        }
+    }
+    return (is_arm64e == 1);
+}
+
+int get_ios_version(uint32_t *version) {
+    CFDictionaryRef sys_ver = _CFCopySystemVersionDictionary();
+    if (sys_ver == NULL) return -1;
+
+    CFStringRef str = (CFStringRef)CFDictionaryGetValue(sys_ver, CFSTR("ProductVersion"));
+    if (str == NULL) return -1;
+    char buf[128] = {0};
+
+    CFStringGetCString(str, buf, sizeof(buf)-1, kCFStringEncodingUTF8);
+    CFRelease(sys_ver);
+    
+    sscanf(buf, "%u.%u.%u", &version[0], &version[1], &version[2]);
+    return 0;
+}
+
+uint32_t get_page_size(void) {
+    uint32_t cpu_family = 0;
+    size_t size = sizeof(cpu_family);
+    sysctlbyname("hw.cpufamily", &cpu_family, &size, NULL, 0);
+
+    if (cpu_family == CPUFAMILY_ARM_CYCLONE) return 0x1000;
+    if (cpu_family == CPUFAMILY_ARM_TYPHOON) {
+        char board[64] = {0};
+        size_t board_size = sizeof(board);
+        sysctlbyname("hw.targettype", &board[0], &board_size, NULL, 0);
+        if (strcasecmp(board, "J81AP") == 0 || strcasecmp(board, "J82AP") == 0) return 0x4000;
+        return 0x1000;
+    }
+    return 0x4000;
+}
+
+const char *resolve_binary_name(const char *path) {
+    if (path == NULL || path[0] == '\0') return NULL;
+    size_t path_len = strlen(path);
+    if (path_len <= 1 || path_len > PATH_MAX) return NULL;
+
+    uint32_t idx = (uint32_t)path_len;
+    for (; path[idx] != '/' && idx > 0; idx--);
+    
+    if (idx == 0 || idx == path_len) return NULL;
+    return (const char *)&path[idx+1];
+}
+
+void *map_file(const char *path, uint32_t *size, bool write) {
+    if (path == NULL || size == NULL) return NULL;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return NULL;
+
+    struct stat st = {0};
+    if (fstat(fd, &st) != 0 || st.st_size <= 0) {
+        close(fd);
+        return NULL;
+    }
+
+    uint32_t prot = PROT_READ | (write ? PROT_WRITE : PROT_NONE);
+    void *data = mmap(NULL, st.st_size, prot, MAP_PRIVATE, fd, 0);
+    close(fd);
+
+    if (data == MAP_FAILED) return NULL;
+    *size = (uint32_t)st.st_size;
+    return data;
+}
+
+void unmap_file(void *data, uint32_t size) {
+    if (data == NULL || size == 0) return;
+    munmap(data, size);
+}
+
+int copy_file(const char *src, const char *dest) {
+    int fd = open(src, O_RDONLY);
+    if (fd == -1) return -1;
+    
+    if (access(dest, R_OK) == 0) {
+        unlink(dest);
+        sync();
+    }
+    
+    size_t size = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+    void *data = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
+    if (data == MAP_FAILED) return -1;
+    
+    FILE *output = fopen(dest, "wb");
+    if (output == NULL) {
+        munmap(data, size);
+        return -1;
+    }
+
+    fwrite(data, size, 1, output);
+    munmap(data, size);
+    fclose(output);
+    sync();
+    return access(dest, F_OK);
 }

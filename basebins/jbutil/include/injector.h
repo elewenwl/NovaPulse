@@ -14,21 +14,16 @@ typedef struct {
     thread_t thread;
     const char *path;
     uint16_t version[3];
-    bool rop_supported;
-    bool shc_supported;
     uint64_t pt_set_self_sym;
-    uint64_t pt_create_sym;
     uint64_t pt_create_mach_sym;
     uint64_t dlopen_sym;
     uint64_t spin_gadget;
     uint64_t stack_data;
-    uint64_t code_data;
     uint64_t string_data;
     bool disable_ptrauth;
     bool requires_rop_thread_data;
     bool requires_rop_thread_setup;
     bool already_injected;
-    uint8_t *shellcode;
 } injector_ctx_t;
 
 void injector_release(injector_ctx_t *ctx);

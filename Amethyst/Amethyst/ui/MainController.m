@@ -9,8 +9,11 @@
 MainController *mainController = NULL;
 void (^alertCallback)(void) = NULL;
 extern int jbserver_heartbeat(void);
+void jbserver_post_jailbreak(bool root, bool unsandbox);
+int run_jbutil(char *cmd, char *arg, bool wait);
 extern int sandbox_check(pid_t pid, const char *operation, uint32_t type, ...);
 extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
+int run_binary(char *path, char **args, char **env, bool wait, bool root);
 
 @implementation MainController
 - (bool)prefersStatusBarHidden {
@@ -45,19 +48,16 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
         if (jbserver_heartbeat() == 0x1337 ||
             sandbox_check(getpid(), NULL, 0, NULL) == 0 ||
             access("/", R_OK | W_OK) == 0) {
-            self.isJailbroken = 1;
-            return true;
+            goto jailbroken;
         }
         
         void *handle = dlopen("/usr/lib/libjailbreak.dylib", RTLD_NOW);
         if (handle != NULL) {
             void *fix_setuid = dlsym(handle, "jb_oneshot_fix_setuid_now");
             void *entitle_now = dlsym(handle, "jb_oneshot_entitle_now");
-            
             dlclose(handle);
             if (fix_setuid != NULL || entitle_now != NULL) {
-                self.isJailbroken = 1;
-                return true;
+                goto jailbroken;
             }
         }
         
@@ -67,15 +67,13 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
         
         if (MACH_PORT_VALID(tfp0)) {
             mach_port_deallocate(mach_task_self(), tfp0);
-            self.isJailbroken = 1;
-            return true;
+            goto jailbroken;
         }
         
         uint32_t cs_flags = 0;
         if (csops(getpid(), 0, &cs_flags, 4) == 0) {
             if (cs_flags & 0x04000000) {
-                self.isJailbroken = 1;
-                return true;
+                goto jailbroken;
             }
         }
         
@@ -85,13 +83,17 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
             if (strcmp(name, "/usr/lib/base_hook.dylib") == 0 ||
                 strcmp(name, "/usr/lib/pspawn_payload.dylib") == 0 ||
                 strcmp(name, "/usr/lib/pspawn_payload-stg2.dylib") == 0) {
-                self.isJailbroken = 1;
-                return true;
+                goto jailbroken;
             }
         }
         
         self.isJailbroken = 0;
         return false;
+        
+jailbroken:
+        self.isJailbroken = 1;
+        jbserver_post_jailbreak(false, false);
+        return true;
     }
     return (self.isJailbroken == 1);
 }
@@ -154,6 +156,12 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
     [self.generatorPopupCard toggleLightMode];
     [self.exploitPopupCard toggleLightMode];
     [self.alert toggleLightMode];
+    [self.installAlert toggleLightMode];
+    [self.loadingAlert toggleLightMode];
+}
+
+- (UIStatusBarStyle)preferredStatusBarStyle {
+    return UIStatusBarStyleLightContent;
 }
 
 - (void)loadView {
@@ -213,14 +221,6 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
     self.gestureOverlay.frame = self.view.frame;
     [self.view addSubview:self.gestureOverlay];
     
-    self.alertOverlay = [[UIView alloc] init];
-    self.alertOverlay.translatesAutoresizingMaskIntoConstraints = NO;
-    self.alertOverlay.backgroundColor = [UIColor blackColor];
-    self.alertOverlay.userInteractionEnabled = NO;
-    self.alertOverlay.frame = self.view.frame;
-    self.alertOverlay.alpha = 0.0f;
-    [self.view addSubview:self.alertOverlay];
-
     if (![self deviceSupported]) {
         [self.jailbreakCardButton setTitle:@"Unsupported"];
         self.jailbreakCardButton.optionButton.alpha = 0.6f;
@@ -261,15 +261,28 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
     }
     
     NSString *version = [NSString stringWithFormat:@"version %@", [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"]];
-    self.settingsPopupCard = [[PopupCard alloc] init:@"Settings" withViews:@[
-        initSwitchOption(enableTweaksOption, @"Enable Tweaks"),
-        initSwitchOption(restoreRootFSOption, @"Restore RootFS"),
-        initBtnOption(exploitOption, @"Exploit", [amethyst exploitString], exploitButtonAction),
-        initBtnOption(setGeneratorOption, @"Generator", amethyst.generator, setGenerator),
-        initBtnOption(themeOption, @"Theme", amethyst.themeName, selectTheme),
-        initOtherOption(versionLabel, [UILabel createLabel:version size:12 bold:0 align:NSTextAlignmentCenter]),
-        initOtherOption(versionIcon, [UIImageView createImage:@"glyph" alpha:0.6f]),
-    ]];
+    
+    if (![self deviceJailbroken]) {
+        self.settingsPopupCard = [[PopupCard alloc] init:@"Settings" withViews:@[
+            initSwitchOption(enableTweaksOption, @"Enable Tweaks"),
+            initSwitchOption(restoreRootFSOption, @"Restore RootFS"),
+            initBtnOption(exploitOption, @"Exploit", [amethyst exploitString], exploitButtonAction),
+            initBtnOption(setGeneratorOption, @"Generator", amethyst.generator, setGenerator),
+            initBtnOption(themeOption, @"Theme", amethyst.themeName, selectTheme),
+            initOtherOption(versionLabel, [UILabel createLabel:version size:12 bold:0 align:NSTextAlignmentCenter]),
+            initOtherOption(versionIcon, [UIImageView createImage:@"glyph" alpha:0.6f]),
+        ]];
+    } else {
+        self.settingsPopupCard = [[PopupCard alloc] init:@"Settings" withViews:@[
+            initSwitchOption(enableTweaksOption, @"Enable Tweaks"),
+            initBtnOption(themeOption, @"Theme", amethyst.themeName, selectTheme),
+            initFullBtnOption(userspaceRebootOption, @"Userspace Reboot", userspaceReboot),
+            initFullBtnOption(respringOption, @"Respring Device", respringDevice),
+            initFullBtnOption(iconCacheOption, @"Refresh Icon Cache", refreshIconCache),
+            initOtherOption(versionLabel, [UILabel createLabel:version size:12 bold:0 align:NSTextAlignmentCenter]),
+            initOtherOption(versionIcon, [UIImageView createImage:@"glyph" alpha:0.6f]),
+        ]];
+    }
 
     finalizePopupCard(creditsPopupCard);
     finalizePopupCard(themePopupCard);
@@ -277,22 +290,42 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
     finalizePopupCard(exploitPopupCard);
     finalizePopupCard(settingsPopupCard);
     
+    self.alertOverlay = [[UIView alloc] init];
+    self.alertOverlay.translatesAutoresizingMaskIntoConstraints = NO;
+    self.alertOverlay.backgroundColor = [UIColor blackColor];
+    self.alertOverlay.userInteractionEnabled = NO;
+    self.alertOverlay.frame = self.view.frame;
+    self.alertOverlay.alpha = 0.0f;
+    [self.view addSubview:self.alertOverlay];
+
+    
     [self.enableTweaksOption setSwitchCallback:self _sel:@selector(enableTweaksHandler:)];
     self.installAlert = [[InstallAlert alloc] init];
     [self.view addSubview:self.installAlert.alertView];
     [self.installAlert setOverlay:self.alertOverlay];
     
-
+    self.loadingAlert = [[LoadingAlert alloc] init:@"Refreshing Icon Cache"];
+    [self.view addSubview:self.loadingAlert.alertView];
+    [self.loadingAlert setOverlay:self.alertOverlay];
+    
     self.alert = [[PopupAlert alloc] init:@"" message:@"" button:@"" _id:self _sel:@selector(alertHandler)];
     [self.view addSubview:self.alert.alertView];
     [self.alert setOverlay:self.alertOverlay];
     
     [self.enableTweaksOption setSwitchValue:amethyst.enableTweaks];
-    [self.themeOption showSeprator:NO];
+    if (![self isJailbroken]) [self.themeOption showSeprator:NO];
     self.versionLabel.alpha = 0.60f;
     if (amethyst.lightMode) {
         [self.lightModeOption.optionButton setTitle:@"Dark Mode" forState:UIControlStateNormal];
     }
+    
+    self.statusIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];
+    self.statusIndicator.center = self.jailbreakCardButton.optionButton.center;
+    self.statusIndicator.translatesAutoresizingMaskIntoConstraints = NO;
+    self.statusIndicator.hidesWhenStopped = true;
+    self.statusIndicator.color = [UIColor whiteColor];
+    self.statusIndicator.alpha = 0.0f;
+    [self.jailbreakCardButton.optionView addSubview:self.statusIndicator];
     [self applyConstraints];
 }
 
@@ -344,6 +377,12 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
     self.layoutGuide = self.view.safeAreaLayoutGuide;
     CGFloat versionOffset = ([UIScreen mainScreen].bounds.size.width == 320.0f) ? -15.0f : -30.0f;
 
+    self.settingsOption1 = self.enableTweaksOption;
+    self.settingsOption2 = [self deviceJailbroken] ? self.themeOption : self.restoreRootFSOption;
+    self.settingsOption3 = [self deviceJailbroken] ? self.userspaceRebootOption : self.exploitOption;
+    self.settingsOption4 = [self deviceJailbroken] ? self.respringOption : self.setGeneratorOption;
+    self.settingsOption5 = [self deviceJailbroken] ? self.iconCacheOption : self.themeOption;
+
     [NSLayoutConstraint activateConstraints:@[
         fillScreenConstraint(blurOverlay),
         fillScreenConstraint(gestureOverlay),
@@ -352,6 +391,7 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
         popupCardConstraint(settingsPopupCard, amethyst.popupCardWidth, amethyst.popupCardHeight),
         popupAlertConstraint(alert),
         popupAlertConstraint(installAlert),
+        popupAlertConstraint(loadingAlert),
         popupCardConstraint(themePopupCard, 280.0f, 380.0f),
         popupCardConstraint(generatorPopupCard, 280.0f, 200.0f),
         popupCardConstraint(exploitPopupCard, 280.0f, 200.0f),
@@ -379,11 +419,12 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
         mainCardOptionConstraint(jailbreakCardButton, mainCard.cardView, 5),
         mainCardOptionConstraint(creditsCardButton, jailbreakCardButton.separator, 0),
         mainCardOptionConstraint(settingsCardButton, creditsCardButton.separator, 0),
-        settingsOptionConstraint(enableTweaksOption, settingsPopupCard.cardTitle),
-        settingsOptionConstraint(restoreRootFSOption, enableTweaksOption.optionView),
-        settingsOptionConstraint(exploitOption, restoreRootFSOption.optionView),
-        settingsOptionConstraint(setGeneratorOption, exploitOption.optionView),
-        settingsOptionConstraint(themeOption, setGeneratorOption.optionView),
+        settingsOptionConstraint(settingsOption1, settingsPopupCard.cardTitle),
+        settingsOptionConstraint(settingsOption2, settingsOption1.optionView),
+        settingsOptionConstraint(settingsOption3, settingsOption2.optionView),
+        settingsOptionConstraint(settingsOption4, settingsOption3.optionView),
+        settingsOptionConstraint(settingsOption5, settingsOption4.optionView),
+        centerButtonConstraint(statusIndicator, jailbreakCardButton),
         setAnchorConstraint(creditsTable.view.topAnchor, creditsPopupCard.separator.bottomAnchor, 0),
         setAnchorConstraint(creditsTable.view.leadingAnchor, creditsPopupCard.cardView.leadingAnchor, 5),
         setAnchorConstraint(creditsTable.view.trailingAnchor, creditsPopupCard.cardView.trailingAnchor, -5),
@@ -420,8 +461,20 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
     self.jailbreakCardButton.optionButton.enabled = false;
     self.creditsCardButton.optionButton.enabled = false;
     self.settingsCardButton.optionButton.enabled = false;
-    [self.jailbreakCardButton.optionButton setTitleColor:[UIColor clearColor] forState:UIControlStateNormal];
 
+    [UIView transitionWithView:self.jailbreakCardButton.optionButton duration:0.2f
+        options:UIViewAnimationOptionTransitionCrossDissolve animations:^{
+        [self.jailbreakCardButton.optionButton setTitleColor:[UIColor clearColor] forState:UIControlStateNormal];
+    } completion:^(BOOL finished){
+        [self.statusIndicator startAnimating];
+    }];
+    
+    [UIView animateWithDuration:0.4 animations:^{
+        self.statusIndicator.alpha = 1.0f;
+        self.creditsCardButton.optionButton.alpha = 0.35f;
+        self.settingsCardButton.optionButton.alpha = 0.35f;
+    }];
+    
     amethyst.restoreRootfs = [self.restoreRootFSOption getSwitchValue];
     amethyst.enableTweaks = [self.enableTweaksOption getSwitchValue];
     uint32_t flags = JB_FLAG_NONE;
@@ -440,7 +493,19 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
             self.jailbreakCardButton.optionButton.enabled = true;
             self.creditsCardButton.optionButton.enabled = true;
             self.settingsCardButton.optionButton.enabled = true;
-            [self.jailbreakCardButton.optionButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+            
+            [UIView animateWithDuration:0.5 delay:0.0 options:UIViewAnimationOptionCurveEaseInOut animations: ^{
+                self.statusIndicator.alpha = 0.0f;
+                self.creditsCardButton.optionButton.alpha = 1.0f;
+                self.settingsCardButton.optionButton.alpha = 1.0f;
+            } completion: ^(BOOL finished) {
+                if (finished) [self.statusIndicator stopAnimating];
+            }];
+            
+            [UIView transitionWithView:self.jailbreakCardButton.optionButton duration:0.4f
+                options:UIViewAnimationOptionTransitionCrossDissolve animations:^{
+                [self.jailbreakCardButton.optionButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+            } completion:^(BOOL finished){ }];
             
             alertCallback = ^(){};
             if (err == JB_ERROR_REMOUNT_REBOOT || err == JB_ERROR_RESTORE_REBOOT) {
@@ -549,6 +614,7 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
 
 - (void)enableTweaksHandler:(UISwitch *)_switch {
     if ([self isJailbroken]) {
+        jbserver_post_jailbreak(true, true);
         if (_switch.isOn) {
             unlink("/amethyst/.disable_tweaks");
         } else {
@@ -558,6 +624,53 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
         }
         sync();
     }
+    
+    amethyst.enableTweaks = _switch.isOn;
+    [amethyst saveConfig];
+}
+
+- (void)userspaceReboot {
+    if (![self isJailbroken] || ![self deviceSupported]) return;
+    jbserver_post_jailbreak(false, true);
+    
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        usleep(500000);
+        run_jbutil("--userspace-reboot", NULL, true);
+    });
+    [self fadeDisplay:NULL];
+}
+
+- (void)respringDevice {
+    if (![self isJailbroken] || ![self deviceSupported]) return;
+    jbserver_post_jailbreak(false, true);
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        usleep(500000);
+        run_jbutil("--respring", NULL, true);
+    });
+    [self fadeDisplay:NULL];
+}
+
+- (void)refreshIconCache {
+    if (![self isJailbroken] || ![self deviceSupported]) return;
+    jbserver_post_jailbreak(false, true);
+
+    self.settingsPopupCard.gestureOverlay.userInteractionEnabled = NO;
+    mainController.loadingAlert.alertView.alpha = 0.01;
+    [mainController.loadingAlert openAlert];
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        usleep(500000);
+        char *args[] = {"/usr/bin/uicache", "--all", NULL};
+        char *env[] = {"DYLD_INSERT_LIBRARIES=/usr/lib/base_hook.dylib", NULL};
+        run_binary("/usr/bin/uicache", args, env, true, false);
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.settingsPopupCard.gestureOverlay.userInteractionEnabled = YES;
+            [self.loadingAlert closeAlert];
+            mainController.loadingAlert.alertView.alpha = 0.00;
+        });
+    });
 }
 
 - (void)selectTheme {[self.settingsPopupCard switchToCard:self.themePopupCard];}
@@ -603,6 +716,9 @@ extern int csops(pid_t pid, unsigned int  ops, void *useraddr, size_t usersize);
             mainController.blurOverlay.alpha = 1.0;
             mainController.blurOverlay.backgroundColor = [UIColor blackColor];
             mainController.blurOverlay.effect = NULL;
+            
+            mainController.alertOverlay.alpha = 1.0;
+            mainController.alertOverlay.backgroundColor = [UIColor blackColor];
         }];
     });
 }

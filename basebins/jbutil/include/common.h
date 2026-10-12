@@ -50,6 +50,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <paths.h>
 #include <compression.h>
+#include <CommonCrypto/CommonDigest.h>
 
 #define RB2_USERREBOOT 0x2000000000000000LLU
 

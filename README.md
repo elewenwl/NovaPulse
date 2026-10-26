@@ -1,6 +1,6 @@
 <img align="left" width="100" height="100" src="logo.png" alt="logo" style="float: left;"/>
 
-<h3 align="left">Amethyst. <br>iOS 12/13 jailbreak for all devices<div align="right" style="float: top;">
+<h3 align="left">NovaPulse. <br>iOS 12/13 jailbreak for all devices<div align="right" style="float: top;">
 </br></h3> 
 
 # Information:

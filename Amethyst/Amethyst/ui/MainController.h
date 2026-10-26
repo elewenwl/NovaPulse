@@ -123,7 +123,12 @@
 @property (nonatomic, strong) ProgressRing *progressRing;
 @property (nonatomic, strong) InstallAlert *installAlert;
 @property (nonatomic, strong) LoadingAlert *loadingAlert;
+@property (nonatomic, strong) PopupCard *aboutPopupCard;
+@property (nonatomic, strong) PopupOption *aboutMeOption;
+@property (nonatomic, strong) UILabel *aboutLabel;
+
+- (void)openAboutMe;
 
 @end
 
-#endif /* MainController_h */
+#endif

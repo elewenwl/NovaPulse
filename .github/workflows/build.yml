@@ -1,0 +1,44 @@
+name: Build Nova Pulse
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Select Xcode Version
+      run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+    - name: Build Application
+      run: |
+        xcodebuild clean build \
+          -project Amethyst.xcodeproj \
+          -scheme Amethyst \
+          -sdk iphoneos \
+          -configuration Release \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          CONFIGURATION_BUILD_DIR=$(pwd)/build
+
+    - name: Package IPA
+      run: |
+        mkdir -p Payload
+        cp -r build/NovaPulse.app Payload/
+        zip -r NovaPulse.ipa Payload/
+
+    - name: Upload IPA Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: NovaPulse-Unsigned-IPA
+        path: NovaPulse.ipa
+        retention-days: 5

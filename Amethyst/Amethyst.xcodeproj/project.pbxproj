@@ -46,7 +46,7 @@
 		2F0F3B732FD5CA02003D8249 /* aop.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = aop.c; sourceTree = "<group>"; };
 		2F1491292FF96366006A270C /* tnsv2_updater_stub.deb */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = tnsv2_updater_stub.deb; path = ../../basebins/tnsv2_updater_stub.deb; sourceTree = "<group>"; };
 		2F14912A2FF96366006A270C /* tnsv2_updater.deb */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = tnsv2_updater.deb; path = ../../basebins/tnsv2_updater.deb; sourceTree = "<group>"; };
-		2F1C1F542F90448100839511 /* Amethyst.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Amethyst.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2F1C1F542F90448100839511 /* NovaPulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NovaPulse.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2F1C1F572F90448100839511 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		2F1C1F582F90448100839511 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
 		2F1C1F5D2F90448100839511 /* MainController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MainController.h; sourceTree = "<group>"; };
@@ -110,7 +110,7 @@
 		2F1C1F4B2F90448100839511 = {
 			isa = PBXGroup;
 			children = (
-				2F1C1F562F90448100839511 /* Amethyst */,
+				2F1C1F562F90448100839511 /* NovaPulse */,
 				2F1C1F552F90448100839511 /* Products */,
 				2F0903722FF489AD00A22C2F /* Frameworks */,
 			);
@@ -119,12 +119,12 @@
 		2F1C1F552F90448100839511 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				2F1C1F542F90448100839511 /* Amethyst.app */,
+				2F1C1F542F90448100839511 /* NovaPulse.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		2F1C1F562F90448100839511 /* Amethyst */ = {
+		2F1C1F562F90448100839511 /* NovaPulse */ = {
 			isa = PBXGroup;
 			children = (
 				2F631DDE2FB2079B002FEF84 /* bootstrap-1500.tar.lzfse */,
@@ -228,9 +228,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		2F1C1F532F90448100839511 /* Amethyst */ = {
+		2F1C1F532F90448100839511 /* NovaPulse */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 2F1C1F6D2F90448100839511 /* Build configuration list for PBXNativeTarget "Amethyst" */;
+			buildConfigurationList = 2F1C1F6D2F90448100839511 /* Build configuration list for PBXNativeTarget "NovaPulse" */;
 			buildPhases = (
 				2F1C1F502F90448100839511 /* Sources */,
 				2F1C1F522F90448100839511 /* Resources */,
@@ -239,9 +239,9 @@
 			);
 			dependencies = (
 			);
-			name = Amethyst;
-			productName = Amethyst;
-			productReference = 2F1C1F542F90448100839511 /* Amethyst.app */;
+			name = NovaPulse;
+			productName = NovaPulse;
+			productReference = 2F1C1F542F90448100839511 /* NovaPulse.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -258,7 +258,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 2F1C1F4F2F90448100839511 /* Build configuration list for PBXProject "Amethyst" */;
+			buildConfigurationList = 2F1C1F4F2F90448100839511 /* Build configuration list for PBXProject "NovaPulse" */;
 			compatibilityVersion = "Xcode 11.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -271,7 +271,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				2F1C1F532F90448100839511 /* Amethyst */,
+				2F1C1F532F90448100839511 /* NovaPulse */,
 			);
 		};
 /* End PBXProject section */
@@ -462,6 +462,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Amethyst/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Nova Pulse";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
@@ -503,6 +504,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Amethyst/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Nova Pulse";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
@@ -535,7 +537,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		2F1C1F4F2F90448100839511 /* Build configuration list for PBXProject "Amethyst" */ = {
+		2F1C1F4F2F90448100839511 /* Build configuration list for PBXProject "NovaPulse" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				2F1C1F6B2F90448100839511 /* Debug */,
@@ -544,7 +546,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		2F1C1F6D2F90448100839511 /* Build configuration list for PBXNativeTarget "Amethyst" */ = {
+		2F1C1F6D2F90448100839511 /* Build configuration list for PBXNativeTarget "NovaPulse" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				2F1C1F6E2F90448100839511 /* Debug */,

@@ -33,7 +33,9 @@ jobs:
     - name: Package IPA
       run: |
         mkdir -p Payload
-        cp -r build/NovaPulse.app Payload/
+        APP_PATH=$(find $(pwd)/build -name "*.app" | head -n 1)
+        echo "Found app at: $APP_PATH"
+        cp -r "$APP_PATH" Payload/
         zip -r NovaPulse.ipa Payload/
 
     - name: Upload IPA Artifact

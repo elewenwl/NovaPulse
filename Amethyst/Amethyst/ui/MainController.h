@@ -74,7 +74,6 @@
 @interface MainController : UIViewController <UITextFieldDelegate, UIPopoverPresentationControllerDelegate>
 
 @property (nonatomic, strong) UILayoutGuide *layoutGuide;
-@property (nonatomic, strong) UIImageView *titleIcon;
 @property (nonatomic, strong) UILabel *mainTitle;
 @property (nonatomic, strong) UILabel *mainSubtitle;
 @property (nonatomic, strong) UIImageView *bgImage;
@@ -82,7 +81,6 @@
 @property (nonatomic, strong) UIView *gestureOverlay;
 @property (nonatomic, strong) UIView *alertOverlay;
 @property (nonatomic, strong) UILabel *versionLabel;
-@property (nonatomic, strong) UIImageView *versionIcon;
 @property (nonatomic, strong) UIActivityIndicatorView *statusIndicator;
 @property (nonatomic, assign) bool hideStatusBar;
 @property (nonatomic, assign) int isJailbroken;
@@ -126,8 +124,10 @@
 @property (nonatomic, strong) PopupCard *aboutPopupCard;
 @property (nonatomic, strong) PopupOption *aboutMeOption;
 @property (nonatomic, strong) UILabel *aboutLabel;
+@property (nonatomic, strong) PopupOption *exportLogsOption;
 
 - (void)openAboutMe;
+- (void)exportLogs;
 
 @end
 

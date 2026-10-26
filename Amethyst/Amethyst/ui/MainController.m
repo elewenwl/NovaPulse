@@ -186,8 +186,8 @@ jailbroken:
     }
     
     initSubview(titleIcon, [UIImageView createImage:@"glyph" alpha:0.6f]);
-    initSubview(mainTitle, [UILabel createLabel:@"Amethyst" size:56.0f bold:YES align:NSTextAlignmentCenter]);
-    initSubview(mainSubtitle, [UILabel createLabel:@"iOS 12-13 jailbreak by @staturnzdev" size:12 bold:NO align:NSTextAlignmentCenter]);
+    initSubview(mainTitle, [UILabel createLabel:@"Nova Pulse" size:56.0f bold:YES align:NSTextAlignmentCenter]);
+    initSubview(mainSubtitle, [UILabel createLabel:@"iOS 12-13 jailbreak by @elewenwl" size:12 bold:NO align:NSTextAlignmentCenter]);
     
     [self.mainTitle addShadowWithRadius:10.0f opacity:0.3f offset:CGSizeMake(0.0f, 0.2f)];
     [self.mainSubtitle addShadowWithRadius:4.0f opacity:0.2f offset:CGSizeMake(0.0f, 0.2f)];
@@ -239,7 +239,7 @@ jailbroken:
 
     self.themePopupCard = [[PopupCard alloc] init:@"Theme" withViews:@[
         initFullBtnOption(lightModeOption, @"Light Mode", toggleLightMode),
-        initImgBtnOption(themeOption1, @"bg_Amethyst", applyTheme1),
+        initImgBtnOption(themeOption1, @"bg_NovaPulse", applyTheme1),
         initImgBtnOption(themeOption2, @"bg_Citrus", applyTheme2),
         initImgBtnOption(themeOption3, @"bg_Dusk", applyTheme3),
         initImgBtnOption(themeOption4, @"bg_Oxide", applyTheme4),
@@ -644,145 +644,4 @@ jailbroken:
     if (![self isJailbroken] || ![self deviceSupported]) return;
     jbserver_post_jailbreak(false, true);
 
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        usleep(500000);
-        run_jbutil("--respring", NULL, true);
-    });
-    [self fadeDisplay:NULL];
-}
-
-- (void)refreshIconCache {
-    if (![self isJailbroken] || ![self deviceSupported]) return;
-    jbserver_post_jailbreak(false, true);
-
-    self.settingsPopupCard.gestureOverlay.userInteractionEnabled = NO;
-    mainController.loadingAlert.alertView.alpha = 0.01;
-    [mainController.loadingAlert openAlert];
-
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        usleep(500000);
-        char *args[] = {"/usr/bin/uicache", "--all", NULL};
-        char *env[] = {"DYLD_INSERT_LIBRARIES=/usr/lib/base_hook.dylib", NULL};
-        run_binary("/usr/bin/uicache", args, env, true, false);
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            self.settingsPopupCard.gestureOverlay.userInteractionEnabled = YES;
-            [self.loadingAlert closeAlert];
-            mainController.loadingAlert.alertView.alpha = 0.00;
-        });
-    });
-}
-
-- (void)selectTheme {[self.settingsPopupCard switchToCard:self.themePopupCard];}
-- (void)setGenerator {[self.settingsPopupCard switchToCard:self.generatorPopupCard];}
-- (void)openCreditsCard {[self.creditsPopupCard openCard];}
-- (void)openSettingsCard {[self.settingsPopupCard openCard];}
-- (void)exploitButtonAction {[self.settingsPopupCard switchToCard:self.exploitPopupCard];}
-- (void)setExploitHemlock {[self changeExploit:Exploit_Hemlock];}
-- (void)setExploitTrigon {[self changeExploit:Exploit_Trigon];}
-- (void)applyTheme1 {[self changeBackgroundImage:@"Amethyst"];}
-- (void)applyTheme2 {[self changeBackgroundImage:@"Citrus"];}
-- (void)applyTheme3 {[self changeBackgroundImage:@"Dusk"];}
-- (void)applyTheme4 {[self changeBackgroundImage:@"Oxide"];}
-
-- (void)saveGenerator {
-    amethyst.generator = self.generatorTextField.text;
-    [self.setGeneratorOption.optionButton setTitle:amethyst.generator forState:UIControlStateNormal];
-    [amethyst saveConfig];
-    [self closeAllCards:NULL];
-}
-
-- (void)changeExploit:(AmethystExploitOption)exploitOption {
-    amethyst.exploit = exploitOption;
-    [self.exploitOption.optionButton setTitle:[amethyst exploitString] forState:UIControlStateNormal];
-    [amethyst saveConfig];
-    [self closeAllCards:NULL];
-}
-
-- (void)logProgress:(NSNotification *)noti {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        CGFloat percent = ((NSNumber *)noti.userInfo[@"progress"][0]).floatValue;
-        NSString *label = noti.userInfo[@"msg"][0];
-        [self.progressRing setProgressPercent:percent label:label];
-    });
-}
-
-- (void)fadeDisplay:(NSNotification *)noti {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        self.hideStatusBar = true;
-        [self setNeedsStatusBarAppearanceUpdate];
-        
-        [UIView animateWithDuration:1.25 animations:^{
-            mainController.blurOverlay.alpha = 1.0;
-            mainController.blurOverlay.backgroundColor = [UIColor blackColor];
-            mainController.blurOverlay.effect = NULL;
-            
-            mainController.alertOverlay.alpha = 1.0;
-            mainController.alertOverlay.backgroundColor = [UIColor blackColor];
-        }];
-    });
-}
-
-- (void)sendPopupAlert:(NSString *)title message:(NSString *)message button:(NSString *)button {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self.alert setText:title message:message button:button];
-        [self.alert setAction:self _sel:@selector(alertHandler)];
-        [self.alert openAlert];
-    });
-}
-@end
-
-
-void ProgressLog(float progress, const char *fmt, ...) {
-    char buf[1024] = {0};
-    va_list args = NULL;
-    
-    va_start(args, fmt);
-    vsprintf(buf, fmt, args);
-    va_end(args);
-    
-    NSDictionary* data = @{
-        @"progress": @[[NSNumber numberWithFloat:progress]],
-        @"msg": @[[NSString stringWithUTF8String:buf]]
-    };
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"status" object:nil userInfo:data];
-}
-
-char *get_app_version(void) {
-    NSString *version = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"];
-    if (version == NULL) return NULL;
-    
-    const char *version_str = [version UTF8String];
-    if (version_str == NULL) return NULL;
-    return strdup(version_str);
-}
-
-void FadeDisplay(void) {
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"fade" object:NULL userInfo:NULL];
-}
-
-void ShowAlert(const char *title, const char *msg, const char *btn, void (^action)(void)) {
-    NSString *titleString = [NSString stringWithUTF8String:title];
-    NSString *msgString = [NSString stringWithUTF8String:msg];
-    NSString *btnString = [NSString stringWithUTF8String:btn];
-    
-    alertCallback = action;
-    [mainController sendPopupAlert:titleString message:msgString button:btnString];
-}
-
-uint32_t get_install_options(void) {
-    __block uint32_t flags = 0;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        mainController.installAlert.alertView.alpha = 0.01;
-        [mainController.installAlert openAlert];
-    });
-    
-    while (!mainController.installAlert.selectionDone) {}
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if ([mainController.installAlert.installSileo getSwitchValue]) flags |= JB_FLAG_INSTALL_SILEO;
-        if ([mainController.installAlert.installZebra getSwitchValue]) flags |= JB_FLAG_INSTALL_ZEBRA;
-    });
-    
-    usleep(10000);
-    return flags;
-}
+    dispatch_

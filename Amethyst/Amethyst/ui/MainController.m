@@ -155,6 +155,7 @@ jailbroken:
     [self.themePopupCard toggleLightMode];
     [self.generatorPopupCard toggleLightMode];
     [self.exploitPopupCard toggleLightMode];
+    [self.aboutPopupCard toggleLightMode];
     [self.alert toggleLightMode];
     [self.installAlert toggleLightMode];
     [self.loadingAlert toggleLightMode];
@@ -185,7 +186,6 @@ jailbroken:
         amethyst.popupCardHeight = 540.0f;
     }
     
-    initSubview(titleIcon, [UIImageView createImage:@"glyph" alpha:0.6f]);
     initSubview(mainTitle, [UILabel createLabel:@"Nova Pulse" size:56.0f bold:YES align:NSTextAlignmentCenter]);
     initSubview(mainSubtitle, [UILabel createLabel:@"iOS 12-13 jailbreak by @elewenwl" size:12 bold:NO align:NSTextAlignmentCenter]);
     
@@ -254,6 +254,10 @@ jailbroken:
         initFullBtnOption(exploitOptionHemlock, @"Hemlock", setExploitHemlock),
         initFullBtnOption(exploitOptionTrigon, @"Trigon", setExploitTrigon),
     ]];
+
+    self.aboutPopupCard = [[PopupCard alloc] init:@"About Me" withViews:@[
+        initOtherOption(aboutLabel, [UILabel createLabel:@"Developer: elewenwl\n\nTelegram: @to_el_day\nGitHub: elewenwl" size:14 bold:NO align:NSTextAlignmentCenter]),
+    ]];
     
     if (!amethyst.trigonSupported) {
         self.exploitOptionTrigon.optionButton.enabled = false;
@@ -269,8 +273,8 @@ jailbroken:
             initBtnOption(exploitOption, @"Exploit", [amethyst exploitString], exploitButtonAction),
             initBtnOption(setGeneratorOption, @"Generator", amethyst.generator, setGenerator),
             initBtnOption(themeOption, @"Theme", amethyst.themeName, selectTheme),
+            initFullBtnOption(aboutMeOption, @"About Me", openAboutMe),
             initOtherOption(versionLabel, [UILabel createLabel:version size:12 bold:0 align:NSTextAlignmentCenter]),
-            initOtherOption(versionIcon, [UIImageView createImage:@"glyph" alpha:0.6f]),
         ]];
     } else {
         self.settingsPopupCard = [[PopupCard alloc] init:@"Settings" withViews:@[
@@ -279,8 +283,8 @@ jailbroken:
             initFullBtnOption(userspaceRebootOption, @"Userspace Reboot", userspaceReboot),
             initFullBtnOption(respringOption, @"Respring Device", respringDevice),
             initFullBtnOption(iconCacheOption, @"Refresh Icon Cache", refreshIconCache),
+            initFullBtnOption(aboutMeOption, @"About Me", openAboutMe),
             initOtherOption(versionLabel, [UILabel createLabel:version size:12 bold:0 align:NSTextAlignmentCenter]),
-            initOtherOption(versionIcon, [UIImageView createImage:@"glyph" alpha:0.6f]),
         ]];
     }
 
@@ -289,6 +293,7 @@ jailbroken:
     finalizePopupCard(generatorPopupCard);
     finalizePopupCard(exploitPopupCard);
     finalizePopupCard(settingsPopupCard);
+    finalizePopupCard(aboutPopupCard);
     
     self.alertOverlay = [[UIView alloc] init];
     self.alertOverlay.translatesAutoresizingMaskIntoConstraints = NO;
@@ -298,7 +303,6 @@ jailbroken:
     self.alertOverlay.alpha = 0.0f;
     [self.view addSubview:self.alertOverlay];
 
-    
     [self.enableTweaksOption setSwitchCallback:self _sel:@selector(enableTweaksHandler:)];
     self.installAlert = [[InstallAlert alloc] init];
     [self.view addSubview:self.installAlert.alertView];
@@ -395,6 +399,9 @@ jailbroken:
         popupCardConstraint(themePopupCard, 280.0f, 380.0f),
         popupCardConstraint(generatorPopupCard, 280.0f, 200.0f),
         popupCardConstraint(exploitPopupCard, 280.0f, 200.0f),
+        popupCardConstraint(aboutPopupCard, 280.0f, 200.0f),
+        setAnchorConstraint(aboutLabel.topAnchor, aboutPopupCard.separator.bottomAnchor, 30.0f),
+        setAnchorConstraint(aboutLabel.centerXAnchor, aboutPopupCard.cardView.centerXAnchor, 0.0f),
         setAnchorConstraint(themeOption1.optionView.topAnchor, themePopupCard.separator.bottomAnchor, 30.0f),
         setAnchorConstraint(themeOption1.optionView.leadingAnchor, themePopupCard.cardView.leadingAnchor, 40.0f),
         setAnchorConstraint(themeOption2.optionView.topAnchor, themePopupCard.separator.bottomAnchor, 30.0f),
@@ -424,6 +431,7 @@ jailbroken:
         settingsOptionConstraint(settingsOption3, settingsOption2.optionView),
         settingsOptionConstraint(settingsOption4, settingsOption3.optionView),
         settingsOptionConstraint(settingsOption5, settingsOption4.optionView),
+        settingsOptionConstraint(aboutMeOption, settingsOption5.optionView),
         centerButtonConstraint(statusIndicator, jailbreakCardButton),
         setAnchorConstraint(creditsTable.view.topAnchor, creditsPopupCard.separator.bottomAnchor, 0),
         setAnchorConstraint(creditsTable.view.leadingAnchor, creditsPopupCard.cardView.leadingAnchor, 5),
@@ -443,14 +451,6 @@ jailbroken:
         setConstantConstraint(progressRing.heightAnchor, 180),
         setAnchorConstraint(versionLabel.bottomAnchor, settingsPopupCard.cardView.bottomAnchor, versionOffset),
         setAnchorConstraint(versionLabel.centerXAnchor, settingsPopupCard.cardView.centerXAnchor, 0),
-        setAnchorConstraint(versionIcon.bottomAnchor, versionLabel.topAnchor, -5),
-        setAnchorConstraint(versionIcon.centerXAnchor, settingsPopupCard.cardView.centerXAnchor, 0),
-        setConstantConstraint(versionIcon.widthAnchor, 30),
-        setConstantConstraint(versionIcon.heightAnchor, 30),
-        setAnchorConstraint(titleIcon.bottomAnchor, mainTitle.topAnchor, 0),
-        setAnchorConstraint(titleIcon.centerXAnchor, settingsPopupCard.cardView.centerXAnchor, 0),
-        setConstantConstraint(titleIcon.widthAnchor, 30),
-        setConstantConstraint(titleIcon.heightAnchor, 30)
     ]];
     
     self.creditsTable.tableView.frame = self.creditsPopupCard.cardView.frame;
@@ -557,6 +557,8 @@ jailbroken:
         self.saveGeneratorOption.optionButton.enabled = YES;
         [self.saveGeneratorOption.optionButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
         [self.generatorPopupCard switchToCard:self.settingsPopupCard];
+    } else if ([self.aboutPopupCard isOpen]) {
+        [self.aboutPopupCard switchToCard:self.settingsPopupCard];
     } else {
         [self.settingsPopupCard closeCard];
     }
@@ -644,4 +646,146 @@ jailbroken:
     if (![self isJailbroken] || ![self deviceSupported]) return;
     jbserver_post_jailbreak(false, true);
 
-    dispatch_
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        usleep(500000);
+        run_jbutil("--respring", NULL, true);
+    });
+    [self fadeDisplay:NULL];
+}
+
+- (void)refreshIconCache {
+    if (![self isJailbroken] || ![self deviceSupported]) return;
+    jbserver_post_jailbreak(false, true);
+
+    self.settingsPopupCard.gestureOverlay.userInteractionEnabled = NO;
+    mainController.loadingAlert.alertView.alpha = 0.01;
+    [mainController.loadingAlert openAlert];
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        usleep(500000);
+        char *args[] = {"/usr/bin/uicache", "--all", NULL};
+        char *env[] = {"DYLD_INSERT_LIBRARIES=/usr/lib/base_hook.dylib", NULL};
+        run_binary("/usr/bin/uicache", args, env, true, false);
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.settingsPopupCard.gestureOverlay.userInteractionEnabled = YES;
+            [self.loadingAlert closeAlert];
+            mainController.loadingAlert.alertView.alpha = 0.00;
+        });
+    });
+}
+
+- (void)selectTheme {[self.settingsPopupCard switchToCard:self.themePopupCard];}
+- (void)setGenerator {[self.settingsPopupCard switchToCard:self.generatorPopupCard];}
+- (void)openCreditsCard {[self.creditsPopupCard openCard];}
+- (void)openSettingsCard {[self.settingsPopupCard openCard];}
+- (void)openAboutMe {[self.settingsPopupCard switchToCard:self.aboutPopupCard];}
+- (void)exploitButtonAction {[self.settingsPopupCard switchToCard:self.exploitPopupCard];}
+- (void)setExploitHemlock {[self changeExploit:Exploit_Hemlock];}
+- (void)setExploitTrigon {[self changeExploit:Exploit_Trigon];}
+- (void)applyTheme1 {[self changeBackgroundImage:@"NovaPulse"];}
+- (void)applyTheme2 {[self changeBackgroundImage:@"Citrus"];}
+- (void)applyTheme3 {[self changeBackgroundImage:@"Dusk"];}
+- (void)applyTheme4 {[self changeBackgroundImage:@"Oxide"];}
+
+- (void)saveGenerator {
+    amethyst.generator = self.generatorTextField.text;
+    [self.setGeneratorOption.optionButton setTitle:amethyst.generator forState:UIControlStateNormal];
+    [amethyst saveConfig];
+    [self closeAllCards:NULL];
+}
+
+- (void)changeExploit:(AmethystExploitOption)exploitOption {
+    amethyst.exploit = exploitOption;
+    [self.exploitOption.optionButton setTitle:[amethyst exploitString] forState:UIControlStateNormal];
+    [amethyst saveConfig];
+    [self closeAllCards:NULL];
+}
+
+- (void)logProgress:(NSNotification *)noti {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        CGFloat percent = ((NSNumber *)noti.userInfo[@"progress"][0]).floatValue;
+        NSString *label = noti.userInfo[@"msg"][0];
+        [self.progressRing setProgressPercent:percent label:label];
+    });
+}
+
+- (void)fadeDisplay:(NSNotification *)noti {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.hideStatusBar = true;
+        [self setNeedsStatusBarAppearanceUpdate];
+        
+        [UIView animateWithDuration:1.25 animations:^{
+            mainController.blurOverlay.alpha = 1.0;
+            mainController.blurOverlay.backgroundColor = [UIColor blackColor];
+            mainController.blurOverlay.effect = NULL;
+            
+            mainController.alertOverlay.alpha = 1.0;
+            mainController.alertOverlay.backgroundColor = [UIColor blackColor];
+        }];
+    });
+}
+
+- (void)sendPopupAlert:(NSString *)title message:(NSString *)message button:(NSString *)button {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self.alert setText:title message:message button:button];
+        [self.alert setAction:self _sel:@selector(alertHandler)];
+        [self.alert openAlert];
+    });
+}
+@end
+
+
+void ProgressLog(float progress, const char *fmt, ...) {
+    char buf[1024] = {0};
+    va_list args = NULL;
+    
+    va_start(args, fmt);
+    vsprintf(buf, fmt, args);
+    va_end(args);
+    
+    NSDictionary* data = @{
+        @"progress": @[[NSNumber numberWithFloat:progress]],
+        @"msg": @[[NSString stringWithUTF8String:buf]]
+    };
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"status" object:nil userInfo:data];
+}
+
+char *get_app_version(void) {
+    NSString *version = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"];
+    if (version == NULL) return NULL;
+    
+    const char *version_str = [version UTF8String];
+    if (version_str == NULL) return NULL;
+    return strdup(version_str);
+}
+
+void FadeDisplay(void) {
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"fade" object:NULL userInfo:NULL];
+}
+
+void ShowAlert(const char *title, const char *msg, const char *btn, void (^action)(void)) {
+    NSString *titleString = [NSString stringWithUTF8String:title];
+    NSString *msgString = [NSString stringWithUTF8String:msg];
+    NSString *btnString = [NSString stringWithUTF8String:btn];
+    
+    alertCallback = action;
+    [mainController sendPopupAlert:titleString message:msgString button:btnString];
+}
+
+uint32_t get_install_options(void) {
+    __block uint32_t flags = 0;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        mainController.installAlert.alertView.alpha = 0.01;
+        [mainController.installAlert openAlert];
+    });
+    
+    while (!mainController.installAlert.selectionDone) {}
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([mainController.installAlert.installSileo getSwitchValue]) flags |= JB_FLAG_INSTALL_SILEO;
+        if ([mainController.installAlert.installZebra getSwitchValue]) flags |= JB_FLAG_INSTALL_ZEBRA;
+    });
+    
+    usleep(10000);
+    return flags;
+}

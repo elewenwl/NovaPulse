@@ -187,7 +187,11 @@ jailbroken:
     }
     
     initSubview(mainTitle, [UILabel createLabel:@"Nova Pulse" size:56.0f bold:YES align:NSTextAlignmentCenter]);
-    initSubview(mainSubtitle, [UILabel createLabel:@"iOS 12-13 jailbreak by @elewenwl" size:12 bold:NO align:NSTextAlignmentCenter]);
+    
+    NSString *subText = [self deviceJailbroken] ? @"Pulse: ACTIVE (Jailbroken)" : @"Pulse: INACTIVE";
+    UIColor *subColor = [self deviceJailbroken] ? [UIColor greenColor] : [UIColor redColor];
+    initSubview(mainSubtitle, [UILabel createLabel:subText size:12 bold:NO align:NSTextAlignmentCenter]);
+    self.mainSubtitle.textColor = subColor;
     
     [self.mainTitle addShadowWithRadius:10.0f opacity:0.3f offset:CGSizeMake(0.0f, 0.2f)];
     [self.mainSubtitle addShadowWithRadius:4.0f opacity:0.2f offset:CGSizeMake(0.0f, 0.2f)];
@@ -273,6 +277,7 @@ jailbroken:
             initBtnOption(exploitOption, @"Exploit", [amethyst exploitString], exploitButtonAction),
             initBtnOption(setGeneratorOption, @"Generator", amethyst.generator, setGenerator),
             initBtnOption(themeOption, @"Theme", amethyst.themeName, selectTheme),
+            initFullBtnOption(exportLogsOption, @"Export Logs", exportLogs),
             initFullBtnOption(aboutMeOption, @"About Me", openAboutMe),
             initOtherOption(versionLabel, [UILabel createLabel:version size:12 bold:0 align:NSTextAlignmentCenter]),
         ]];
@@ -283,6 +288,7 @@ jailbroken:
             initFullBtnOption(userspaceRebootOption, @"Userspace Reboot", userspaceReboot),
             initFullBtnOption(respringOption, @"Respring Device", respringDevice),
             initFullBtnOption(iconCacheOption, @"Refresh Icon Cache", refreshIconCache),
+            initFullBtnOption(exportLogsOption, @"Export Logs", exportLogs),
             initFullBtnOption(aboutMeOption, @"About Me", openAboutMe),
             initOtherOption(versionLabel, [UILabel createLabel:version size:12 bold:0 align:NSTextAlignmentCenter]),
         ]];
@@ -431,7 +437,8 @@ jailbroken:
         settingsOptionConstraint(settingsOption3, settingsOption2.optionView),
         settingsOptionConstraint(settingsOption4, settingsOption3.optionView),
         settingsOptionConstraint(settingsOption5, settingsOption4.optionView),
-        settingsOptionConstraint(aboutMeOption, settingsOption5.optionView),
+        settingsOptionConstraint(exportLogsOption, settingsOption5.optionView),
+        settingsOptionConstraint(aboutMeOption, exportLogsOption.optionView),
         centerButtonConstraint(statusIndicator, jailbreakCardButton),
         setAnchorConstraint(creditsTable.view.topAnchor, creditsPopupCard.separator.bottomAnchor, 0),
         setAnchorConstraint(creditsTable.view.leadingAnchor, creditsPopupCard.cardView.leadingAnchor, 5),
@@ -673,6 +680,20 @@ jailbroken:
             mainController.loadingAlert.alertView.alpha = 0.00;
         });
     });
+}
+
+- (void)exportLogs {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *documentsDirectory = [paths objectAtIndex:0];
+    NSString *filePath = [documentsDirectory stringByAppendingPathComponent:@"novapulse_log.txt"];
+    
+    NSString *logText = [NSString stringWithFormat:@"Nova Pulse Log\nDevice: %@\niOS: %@\nJailbroken: %@\n", [[UIDevice currentDevice] model], [[UIDevice currentDevice] systemVersion], [self deviceJailbroken] ? @"YES" : @"NO"];
+    
+    [logText writeToFile:filePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    
+    [self.alert setText:@"Logs Saved" message:@"Log file saved to Documents folder.\nUse Filza or iMazing to access." button:@"Okay"];
+    [self.alert setAction:self _sel:@selector(alertHandler)];
+    [self.alert openAlert];
 }
 
 - (void)selectTheme {[self.settingsPopupCard switchToCard:self.themePopupCard];}
